@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://nardoszebene.github.io/x-finder/sitemap.xml
