@@ -1,0 +1,140 @@
+// Data passed from Rust to the UI.
+
+export struct FileRow {
+    name: string,
+    kind: string,
+    size: string,
+    date: string,
+    created: string,
+    icon: string,
+    // Real thumbnail (icon and gallery views), when Windows has one.
+    thumb: image,
+    has-thumb: bool,
+    // Folder previews (Finder-style): a picture from inside the folder.
+    peek: image,
+    has-peek: bool,
+    // Windows' own icon for this file (list/column rows), when enabled.
+    sys-icon: image,
+    has-sys-icon: bool,
+    // Colour tags, bit 0 = red … bit 6 = gray.
+    tags: int,
+    // Folder colour from its first tag (-1 = style colour).
+    tint: int,
+    is-dir: bool,
+    // Folder sizes mode: share of the folder's total (0..1), -1 = not shown.
+    share: float,
+    share-text: string,
+    selected: bool,
+    cursor: bool,
+    hidden: bool,
+}
+
+// One entry of the app's context menu.
+export struct MenuEntry {
+    id: string,
+    label: string,
+    icon: string,
+    shortcut: string,
+    // 0 item, 1 separator, 2 submenu, 3 colour-tag row
+    kind: int,
+    enabled: bool,
+    checked: bool,
+    // Tag row: tags currently set on the selection.
+    tags: int,
+}
+
+export struct Crumb {
+    label: string,
+}
+
+export struct SidebarItem {
+    label: string,
+    icon: string,
+    header: bool,
+    // Colour of a tag entry (Tags section), or -1.
+    tag: int,
+    // Favourites can be dragged to reorder.
+    favorite: bool,
+}
+
+// A folder or drive tile on the This PC page.
+export struct PcCard {
+    label: string,
+    // "50.1 GB free of 269 GB"
+    detail: string,
+    icon: string,
+    // 0..1 of the drive in use
+    used: float,
+    has-bar: bool,
+    index: int,
+}
+
+export struct TabItem {
+    title: string,
+}
+
+// One pane of a split layout (a tab shown side by side with others).
+export struct SlotData {
+    // Index into `Bridge.tabs`.
+    tab: int,
+    title: string,
+    // "12 items"
+    status: string,
+    files: [FileRow],
+    active: bool,
+}
+
+// One parent-folder column in column view.
+export struct PaneData {
+    title: string,
+    files: [FileRow],
+    // Row of the item that leads to the next column (-1 while loading).
+    selected: int,
+}
+
+// Rendered document block: 0 paragraph, 1-3 headings, 4 bullet, 5 code,
+// 6 quote, 7 rule.
+export struct DocBlock {
+    kind: int,
+    text: string,
+}
+
+// Syntax-highlighted code (preview kind 7): one coloured piece of a line;
+// `kind` indexes Theme.syntax.
+export struct CodeSpan {
+    text: string,
+    kind: int,
+}
+
+export struct CodeLine {
+    num: string,
+    spans: [CodeSpan],
+}
+
+// One row of the command palette.
+export struct PaletteItem {
+    title: string,
+    detail: string,
+    shortcut: string,
+    icon: string,
+}
+
+export struct TableRow {
+    cells: [string],
+}
+
+// Gallery view thumbnail strip entry; `index` is the row in `files`.
+export struct StripItem {
+    index: int,
+    file: FileRow,
+}
+
+// Info about the item under the cursor.
+export struct PreviewInfo {
+    name: string,
+    kind: string,
+    size: string,
+    modified: string,
+    created: string,
+    icon: string,
+}

@@ -1,0 +1,150 @@
+import { Theme } from "../theme.slint";
+import { Bridge } from "../bridge.slint";
+
+// Small modal for renaming (F2) and naming a new folder.
+// The name is pre-selected without its extension, like Explorer.
+export component RenameDialog inherits Rectangle {
+    callback closed();
+    background: #00000059;
+
+    TouchArea {
+        clicked => {
+            Bridge.rename-cancel();
+            root.closed();
+        }
+    }
+
+    panel := Rectangle {
+        width: min(440px, parent.width - 48px);
+        height: Bridge.rename-group ? 222px : 150px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 3;
+        border-radius: Theme.r-panel;
+        background: Theme.window;
+        drop-shadow-blur: 28px;
+        drop-shadow-color: #00000066;
+
+        TouchArea { }
+
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            Text {
+                text: Bridge.rename-title;
+                font-weight: 600;
+                color: Theme.text;
+            }
+            Rectangle {
+                height: 32px;
+                border-radius: Theme.r-control;
+                background: Theme.field;
+                border-width: 2px;
+                border-color: Theme.focus-ring;
+                input := TextInput {
+                    x: 10px;
+                    width: parent.width - 20px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    single-line: true;
+                    text: Bridge.rename-text;
+                    color: Theme.text;
+                    selection-background-color: Theme.focus-ring;
+                    accepted => {
+                        Bridge.rename-commit(self.text);
+                        if !Bridge.renaming {
+                            root.closed();
+                        }
+                    }
+                    init => {
+                        self.focus();
+                        self.set-selection-offsets(0, Bridge.rename-stem);
+                    }
+                }
+            }
+            // Tab groups: optional keyboard shortcut.
+            if Bridge.rename-group: HorizontalLayout {
+                spacing: 5px;
+                Text {
+                    width: 62px;
+                    text: "Shortcut";
+                    vertical-alignment: center;
+                    font-size: Theme.font-small;
+                    color: Theme.text-secondary;
+                }
+                for k in 10: Rectangle {
+                    width: k == 0 ? 48px : 28px;
+                    height: 26px;
+                    border-radius: 6px;
+                    property <bool> on: Bridge.rename-shortcut == k;
+                    background: self.on ? Theme.accent : sc-ta.has-hover ? Theme.hover : Theme.field;
+                    Text {
+                        text: k == 0 ? "None" : "\{k}";
+                        font-size: Theme.font-small;
+                        font-weight: parent.on ? 600 : 400;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        color: parent.on ? #ffffff : Theme.text;
+                    }
+                    sc-ta := TouchArea {
+                        clicked => { Bridge.rename-shortcut = k; }
+                    }
+                }
+                Rectangle { }
+            }
+            if Bridge.rename-group: Text {
+                text: Bridge.rename-shortcut == 0 ? "No shortcut. Open it from the tab menu (right-click a tab)."
+                    : "Press Ctrl+Alt+\{Bridge.rename-shortcut} to open this group.";
+                font-size: Theme.font-small;
+                color: Theme.text-tertiary;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    horizontal-stretch: 1;
+                    text: Bridge.rename-error;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    font-size: Theme.font-small;
+                    color: Theme.danger;
+                }
+                Rectangle {
+                    width: cancel-label.preferred-width + 24px;
+                    height: 28px;
+                    border-radius: Theme.r-control;
+                    background: cancel-ta.pressed ? Theme.pressed : Theme.field;
+                    cancel-label := Text {
+                        text: "Cancel";
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                    }
+                    cancel-ta := TouchArea {
+                        clicked => {
+                            Bridge.rename-cancel();
+                            root.closed();
+                        }
+                    }
+                }
+                Rectangle {
+                    width: ok-label.preferred-width + 24px;
+                    height: 28px;
+                    border-radius: Theme.r-control;
+                    background: ok-ta.pressed ? Theme.selection : Theme.accent;
+                    ok-label := Text {
+                        text: "Save";
+                        font-size: Theme.font-small;
+                        font-weight: 600;
+                        color: #ffffff;
+                    }
+                    ok-ta := TouchArea {
+                        clicked => {
+                            Bridge.rename-commit(input.text);
+                            if !Bridge.renaming {
+                                root.closed();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

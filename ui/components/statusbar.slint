@@ -1,0 +1,74 @@
+import { Theme } from "../theme.slint";
+import { Bridge } from "../bridge.slint";
+import { Icons } from "../icons.slint";
+import { Slider } from "std-widgets.slint";
+
+export component StatusBar inherits Rectangle {
+    height: 26px;
+    background: Theme.toolbar;
+
+    Rectangle {
+        y: 0px;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        // Two alternating items (see Bridge.status-serial): each change
+        // creates a fresh Text instead of updating one in place.
+        if Math.mod(Bridge.status-serial, 2) == 0: Text {
+            horizontal-stretch: 1;
+            text: Bridge.status-left;
+            vertical-alignment: center;
+            overflow: elide;
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+        }
+        if Math.mod(Bridge.status-serial, 2) == 1: Text {
+            horizontal-stretch: 1;
+            text: Bridge.status-left;
+            vertical-alignment: center;
+            overflow: elide;
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+        }
+        if Bridge.view-mode == 1 || Bridge.view-mode == 3: HorizontalLayout {
+            spacing: 6px;
+            Image {
+                width: 12px;
+                source: Icons.glyph("small");
+                colorize: Theme.text-secondary;
+                image-fit: contain;
+            }
+            Slider {
+                width: 120px;
+                minimum: 32;
+                maximum: 256;
+                value <=> Bridge.icon-size;
+            }
+            Image {
+                width: 14px;
+                source: Icons.glyph("large");
+                colorize: Theme.text-secondary;
+                image-fit: contain;
+            }
+        }
+        if Math.mod(Bridge.status-serial, 2) == 0: Text {
+            text: Bridge.status-right;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            font-size: Theme.font-label;
+            color: Theme.text-tertiary;
+        }
+        if Math.mod(Bridge.status-serial, 2) == 1: Text {
+            text: Bridge.status-right;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            font-size: Theme.font-label;
+            color: Theme.text-tertiary;
+        }
+    }
+}

@@ -1,0 +1,184 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { MenuEntry } from "../types.slint";
+
+// One colour dot in the tag row; filled ring when the tag is set.
+component TagDot inherits Rectangle {
+    in property <color> tint;
+    in property <bool> set;
+    callback clicked();
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background: tint;
+    border-width: set ? 2px : (ta.has-hover ? 2px : 0px);
+    border-color: set ? Theme.text : #ffffff80;
+    if set: Rectangle {
+        x: 6px;
+        y: 6px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: #ffffff;
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component MenuRow inherits Rectangle {
+    in property <MenuEntry> entry;
+    in property <bool> sub-open;
+    callback hovered();
+    callback picked(id: string);
+
+    // kind: 0 item, 1 separator, 2 submenu, 3 tag row
+    height: entry.kind == 1 ? 9px : entry.kind == 3 ? 32px : 26px;
+    property <bool> interactive: entry.enabled && (entry.kind == 0 || entry.kind == 2);
+    property <bool> hot: (ta.has-hover && root.interactive) || (root.sub-open && entry.kind == 2);
+    property <bool> hovering: ta.has-hover;
+    changed hovering => {
+        if root.hovering {
+            root.hovered();
+        }
+    }
+
+    if entry.kind == 1: Rectangle {
+        x: 10px;
+        y: 4px;
+        width: parent.width - 20px;
+        height: 1px;
+        background: Theme.menu-separator;
+    }
+
+    if entry.kind == 0 || entry.kind == 2: Rectangle {
+        x: 5px;
+        width: parent.width - 10px;
+        border-radius: 5px;
+        background: root.hot ? Theme.accent : transparent;
+    }
+
+    if (entry.kind == 0 || entry.kind == 2) && (entry.icon != "" || entry.checked): Image {
+        x: 14px;
+        y: (parent.height - self.height) / 2;
+        width: 15px;
+        height: 15px;
+        source: Icons.glyph(entry.checked ? "check" : entry.icon);
+        colorize: root.hot ? #ffffff : entry.enabled ? Theme.text-secondary : Theme.text-tertiary;
+    }
+
+    if entry.kind == 0 || entry.kind == 2: Text {
+        x: 38px;
+        width: parent.width - 38px - 60px;
+        height: parent.height;
+        text: entry.label;
+        vertical-alignment: center;
+        overflow: elide;
+        font-size: Theme.font-base;
+        color: root.hot ? #ffffff : entry.enabled ? Theme.text : Theme.text-tertiary;
+    }
+
+    if entry.kind == 0 && entry.shortcut != "": Text {
+        x: parent.width - self.width - 14px;
+        height: parent.height;
+        text: entry.shortcut;
+        vertical-alignment: center;
+        font-size: Theme.font-small;
+        color: root.hot ? #ffffffcc : Theme.text-tertiary;
+    }
+
+    if entry.kind == 2: Image {
+        x: parent.width - 22px;
+        y: (parent.height - self.height) / 2;
+        width: 9px;
+        height: 9px;
+        source: Icons.glyph("crumb");
+        colorize: root.hot ? #ffffff : Theme.text-secondary;
+    }
+
+    if entry.kind == 3: HorizontalLayout {
+        x: 14px;
+        width: parent.width - 28px;
+        spacing: 8px;
+        alignment: start;
+        for c[i] in Theme.tag-colors: VerticalLayout {
+            alignment: center;
+            TagDot {
+                tint: c;
+                set: Math.mod(floor(entry.tags / Math.pow(2, i)), 2) == 1;
+                clicked => { root.picked("tag:" + i); }
+            }
+        }
+    }
+
+    ta := TouchArea {
+        enabled: entry.kind != 1 && entry.kind != 3;
+        clicked => {
+            if entry.kind == 0 && entry.enabled {
+                root.picked(entry.id);
+            }
+        }
+    }
+}
+
+component MenuPanel inherits Rectangle {
+    in property <[MenuEntry]> items;
+    in property <int> open-index: -1;
+    callback hovered(index: int, row-y: length);
+    callback picked(id: string);
+
+    width: 270px;
+    height: rows.preferred-height;
+    border-radius: 9px;
+    background: Theme.menu-bg;
+    border-width: 1px;
+    border-color: Theme.menu-border;
+    drop-shadow-blur: 22px;
+    drop-shadow-offset-y: 6px;
+    drop-shadow-color: #00000070;
+
+    rows := VerticalLayout {
+        padding: 5px;
+        for e[i] in root.items: MenuRow {
+            entry: e;
+            sub-open: i == root.open-index;
+            hovered => { root.hovered(i, self.y); }
+            picked(id) => { root.picked(id); }
+        }
+    }
+}
+
+// The app's own context menu: dark/light with the theme, rounded, with icons,
+// shortcuts, submenus and a colour-tag row. Covers the window while open so a
+// click anywhere else closes it.
+export component AppMenu inherits Rectangle {
+    property <length> sub-y;
+
+    TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                Bridge.menu-close();
+            }
+        }
+    }
+
+    main := MenuPanel {
+        items: Bridge.menu-items;
+        open-index: Bridge.sub-index;
+        x: max(6px, min(Bridge.menu-x, root.width - self.width - 6px));
+        y: max(6px, min(Bridge.menu-y, root.height - self.height - 6px));
+        hovered(i, ry) => {
+            root.sub-y = self.y + ry;
+            Bridge.menu-hover(i);
+        }
+        picked(id) => { Bridge.menu-pick(id); }
+    }
+
+    if Bridge.sub-index >= 0: MenuPanel {
+        items: Bridge.sub-items;
+        x: main.x + main.width + self.width - 4px > root.width ? main.x - self.width + 4px : main.x + main.width - 4px;
+        y: max(6px, min(root.sub-y, root.height - self.height - 6px));
+        picked(id) => { Bridge.menu-pick(id); }
+    }
+}

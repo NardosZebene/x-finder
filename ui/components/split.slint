@@ -1,0 +1,288 @@
+import { SlimScroll } from "controls.slint";
+// Split layouts: 1, 2 (side by side or stacked), 1 + 2, or 4 folders at once.
+// Each pane is a tab. The focused pane is the full view (main.slint); the
+// others are light lists drawn here. Click one to focus it; drop files on
+// one to copy/move them into its folder.
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { FileRow, SlotData } from "../types.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+// Pane rectangles as fractions of the area. Layouts: 0 single,
+// 1 side by side, 2 stacked, 3 one left + two right, 4 grid of four.
+export global Split {
+    public pure function count(l: int) -> int {
+        return l == 0 ? 1 : l == 3 ? 3 : l == 4 ? 4 : 2;
+    }
+    public pure function fx(l: int, i: int) -> float {
+        if l == 1 || l == 3 { return i == 0 ? 0 : 0.5; }
+        if l == 4 { return Math.mod(i, 2) == 0 ? 0 : 0.5; }
+        return 0;
+    }
+    public pure function fy(l: int, i: int) -> float {
+        if l == 2 { return i == 0 ? 0 : 0.5; }
+        if l == 3 { return i == 2 ? 0.5 : 0; }
+        if l == 4 { return i >= 2 ? 0.5 : 0; }
+        return 0;
+    }
+    public pure function fw(l: int, i: int) -> float {
+        return l == 0 || l == 2 ? 1 : 0.5;
+    }
+    public pure function fh(l: int, i: int) -> float {
+        if l == 2 || l == 4 { return 0.5; }
+        if l == 3 { return i == 0 ? 1 : 0.5; }
+        return 1;
+    }
+}
+
+// Folder name strip on top of every pane; the focused one is accented.
+export component PaneHeader inherits Rectangle {
+    in property <string> title;
+    in property <string> status;
+    in property <bool> active;
+    callback clicked();
+    height: 26px;
+    background: root.active ? Theme.selection-inactive : Theme.toolbar;
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: root.active ? Theme.accent : Theme.border;
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 6px;
+        Image {
+            width: 13px;
+            source: Icons.glyph("folder");
+            colorize: root.active ? Theme.accent : Theme.text-secondary;
+            image-fit: contain;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.title;
+            vertical-alignment: center;
+            overflow: elide;
+            font-size: Theme.font-label;
+            font-weight: root.active ? 600 : 400;
+            color: root.active ? Theme.text : Theme.text-secondary;
+        }
+        Text {
+            text: root.status;
+            vertical-alignment: center;
+            font-size: Theme.font-label;
+            color: Theme.text-tertiary;
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component MiniRow inherits Rectangle {
+    in property <FileRow> file;
+    in property <int> index;
+    in property <bool> wide;
+    callback pressed(ctrl: bool, shift: bool);
+    callback activated();
+    callback context(x: length, y: length);
+    height: Theme.row-height;
+
+    Rectangle {
+        x: Theme.list-inset;
+        width: parent.width - 2 * Theme.list-inset;
+        border-radius: 5px;
+        background: root.file.selected ? Theme.selection-inactive
+            : ta.has-hover ? Theme.hover
+            : Math.mod(root.index, 2) == 1 ? Theme.row-alt : transparent;
+    }
+    HorizontalLayout {
+        padding-left: Theme.list-padding;
+        padding-right: Theme.list-padding;
+        spacing: 8px;
+        Rectangle {
+            width: Theme.row-icon;
+            if root.file.icon == "folder" || root.file.icon == "folderlink": FolderIcon {
+                y: (parent.height - self.height) / 2;
+                width: Theme.row-icon;
+                height: Theme.row-icon;
+                tint: root.file.tint;
+                alias: root.file.icon == "folderlink";
+            }
+            if root.file.icon != "folder" && root.file.icon != "folderlink": Image {
+                y: (parent.height - self.height) / 2;
+                width: Theme.row-icon;
+                height: Theme.row-icon;
+                source: root.file.has-sys-icon ? root.file.sys-icon : Icons.file(root.file.icon);
+            }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.file.name;
+            font-size: Theme.row-font;
+            vertical-alignment: center;
+            overflow: elide;
+            color: Theme.text;
+            opacity: root.file.hidden ? 0.6 : 1.0;
+        }
+        if root.wide: Text {
+            width: 150px;
+            text: root.file.date;
+            font-size: Theme.row-font;
+            vertical-alignment: center;
+            overflow: elide;
+            color: Theme.text-secondary;
+        }
+        Text {
+            width: 70px;
+            text: root.file.size;
+            font-size: Theme.row-font;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            color: Theme.text-secondary;
+        }
+    }
+    ta := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                if e.button == PointerEventButton.left {
+                    root.pressed(e.modifiers.control, e.modifiers.shift);
+                } else if e.button == PointerEventButton.right {
+                    root.context(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                }
+            }
+        }
+        double-clicked => { root.activated(); }
+    }
+}
+
+// A pane that isn't focused.
+export component MiniPane inherits Rectangle {
+    in property <SlotData> slot;
+    in property <int> slot-index;
+    // Ask the window for keyboard focus.
+    callback focus-requested();
+    background: Theme.surface;
+    clip: true;
+
+    TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.focus-requested();
+                Bridge.slot-focus(root.slot-index);
+            }
+        }
+    }
+    VerticalLayout {
+        PaneHeader {
+            title: root.slot.title;
+            status: root.slot.status;
+            active: false;
+            clicked => {
+                root.focus-requested();
+                Bridge.slot-focus(root.slot-index);
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            mini-list := ListView {
+                            width: parent.width;
+                            height: parent.height;
+                            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                            for row[i] in root.slot.files: MiniRow {
+                    file: row;
+                    index: i;
+                    wide: root.width > 460px;
+                    pressed(ctrl, shift) => {
+                        root.focus-requested();
+                        Bridge.slot-pressed(root.slot-index, i, ctrl, shift);
+                    }
+                    activated => { Bridge.slot-activated(root.slot-index, i); }
+                    context(x, y) => {
+                        root.focus-requested();
+                        Bridge.slot-context(root.slot-index, i, x, y);
+                    }
+                }
+            }
+    SlimScroll {
+        x: parent.width - self.width - 1px;
+        y: 0px;
+        height: parent.height;
+        content-y <=> mini-list.content-y;
+        content-height: mini-list.content-height;
+        visible-height: mini-list.visible-height;
+    }
+        }
+    }
+    // On top: files dragged from another pane land in this pane's folder.
+    drop := DropArea {
+        can-drop(e) => {
+            return Bridge.can-drop-tab(root.slot.tab, e.data) ? e.proposed-action : DragAction.none;
+        }
+        dropped(e) => {
+            Bridge.drop-tab(root.slot.tab, e.data);
+            return e.proposed-action;
+        }
+    }
+    if drop.has-drag: Rectangle {
+        border-width: 2px;
+        border-color: Theme.accent;
+        background: #0a84ff14;
+    }
+}
+
+// Flyout under the toolbar's layout button, like Windows snap layouts.
+export component LayoutPicker inherits Rectangle {
+    TouchArea {
+        clicked => { Bridge.layout-picker-open = false; }
+    }
+    card := Rectangle {
+        x: max(8px, min(root.width - self.width - 8px, Bridge.layout-picker-x - self.width / 2));
+        y: Bridge.layout-picker-y + 6px;
+        width: 5 * 78px + 2 * 12px;
+        height: 104px;
+        border-radius: 12px;
+        background: Theme.menu-bg;
+        border-width: 1px;
+        border-color: Theme.menu-border;
+        drop-shadow-blur: 18px;
+        drop-shadow-color: #00000055;
+        drop-shadow-offset-y: 4px;
+        TouchArea { }
+        Text {
+            x: 14px;
+            y: 8px;
+            text: "Layout";
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+        }
+        for l in 5: Rectangle {
+            x: 12px + l * 78px + 4px;
+            y: 32px;
+            width: 70px;
+            height: 54px;
+            border-radius: 8px;
+            background: tile-ta.has-hover ? Theme.hover : transparent;
+            property <bool> current: Bridge.layout == l;
+            for k in Split.count(l): Rectangle {
+                x: 6px + Split.fx(l, k) * (parent.width - 12px) + (Split.fx(l, k) > 0 ? 2px : 0px);
+                y: 6px + Split.fy(l, k) * (parent.height - 12px) + (Split.fy(l, k) > 0 ? 2px : 0px);
+                width: Split.fw(l, k) * (parent.width - 12px) - (Split.fw(l, k) < 1 ? 2px : 0px);
+                height: Split.fh(l, k) * (parent.height - 12px) - (Split.fh(l, k) < 1 ? 2px : 0px);
+                border-radius: 4px;
+                background: parent.current ? Theme.accent : tile-ta.has-hover ? Theme.selection-inactive : Theme.field;
+                border-width: 1px;
+                border-color: parent.current ? Theme.accent : Theme.border;
+            }
+            tile-ta := TouchArea {
+                clicked => {
+                    Bridge.layout-picker-open = false;
+                    Bridge.set-layout(l);
+                }
+            }
+        }
+    }
+}

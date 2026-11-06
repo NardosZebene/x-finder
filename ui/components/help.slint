@@ -1,0 +1,264 @@
+// Help (F1): how to use the app — navigation, views, Quick Look, search
+// syntax, the command palette's typed commands, tags, tabs and settings.
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Bridge } from "../bridge.slint";
+import { SlimScroll } from "controls.slint";
+
+// "Ctrl+Shift+P" / "pdf: content:"…"" on the left, what it does on the right.
+component Row inherits HorizontalLayout {
+    in property <string> keys;
+    in property <string> text;
+    spacing: 14px;
+    Rectangle {
+        width: 236px;
+        min-height: label.preferred-height + 8px;
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: min(parent.width, label.preferred-width + 16px);
+            height: label.preferred-height + 8px;
+            border-radius: 6px;
+            background: Theme.field;
+            label := Text {
+                x: 8px;
+                width: parent.width - 16px;
+                text: root.keys;
+                font-family: Theme.mono-font;
+                font-size: Theme.font-small;
+                wrap: word-wrap;
+                color: Theme.text;
+            }
+        }
+    }
+    Text {
+        horizontal-stretch: 1;
+        text: root.text;
+        wrap: word-wrap;
+        font-size: Theme.font-small;
+        color: Theme.text-secondary;
+    }
+}
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    in property <string> intro;
+    spacing: 7px;
+    Text {
+        text: root.title;
+        font-size: 15px;
+        font-weight: 650;
+        color: Theme.text;
+    }
+    if root.intro != "": Text {
+        text: root.intro;
+        wrap: word-wrap;
+        font-size: Theme.font-small;
+        color: Theme.text-secondary;
+    }
+    @children
+}
+
+export component HelpDialog inherits Rectangle {
+    callback closed();
+    background: #00000059;
+    TouchArea {
+        clicked => {
+            Bridge.help-open = false;
+            root.closed();
+        }
+    }
+
+    Rectangle {
+        width: min(780px, parent.width - 48px);
+        height: min(780px, parent.height - 40px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.r-panel;
+        background: Theme.window;
+        border-width: 1px;
+        border-color: Theme.menu-border;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #00000070;
+        clip: true;
+        TouchArea { }
+
+        VerticalLayout {
+            padding: 24px;
+            padding-bottom: 16px;
+            spacing: 12px;
+
+            HorizontalLayout {
+                Text {
+                    horizontal-stretch: 1;
+                    text: "How to use X Finder";
+                    font-size: 20px;
+                    font-weight: 650;
+                    color: Theme.text;
+                }
+                Rectangle {
+                    width: done-label.preferred-width + 32px;
+                    height: 30px;
+                    border-radius: Theme.r-control;
+                    background: done-ta.pressed ? Theme.selection : Theme.accent;
+                    done-label := Text {
+                        text: "Done";
+                        font-size: Theme.font-small;
+                        font-weight: 600;
+                        color: #ffffff;
+                    }
+                    done-ta := TouchArea {
+                        clicked => {
+                            Bridge.help-open = false;
+                            root.closed();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                help-scroll := ScrollView {
+                    width: parent.width;
+                    height: parent.height;
+                    vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                    content-width: self.visible-width;
+                    content-height: body.preferred-height;
+                    body := VerticalLayout {
+                        width: parent.width;
+                        padding-left: 4px;
+                        padding-right: 26px;
+                        spacing: 22px;
+
+                        Section {
+                            title: "Quick start";
+                            intro: "Double-click to open. Press Space to preview. Type in the search box: this folder filters at once, then every subfolder is searched when you pause typing. Press Ctrl+Shift+P for the command palette, where you can type commands like “mkdir a, b”.";
+                        }
+
+                        Section {
+                            title: "Getting around";
+                            Row { keys: "Double-click / Enter"; text: "Open a folder or file (Ctrl+Enter: in a new tab)."; }
+                            Row { keys: "Alt+← / Alt+→"; text: "Back / Forward."; }
+                            Row { keys: "Alt+↑ or Backspace"; text: "Enclosing folder."; }
+                            Row { keys: "← / →  (list view)"; text: "Out of / into the selected folder, like column view."; }
+                            Row { keys: "Type a name"; text: "Jump to it as you type (“rep” → report.pdf). Press the same letter again (h, h, h…) to step through every name starting with it."; }
+                            Row { keys: "Ctrl+L"; text: "Type a path (or click the empty part of the path bar). Click any part of the path to go there."; }
+                            Row { keys: "Ctrl+G"; text: "Jump to a folder you have visited — type part of its name."; }
+                            Row { keys: "Sidebar"; text: "Favourites (drag to reorder, right-click for options), drives, Recents, Recycle Bin and colour tags."; }
+                        }
+
+                        Section {
+                            title: "Views";
+                            Row { keys: "Ctrl+1 … Ctrl+4"; text: "List · Icons · Columns · Gallery."; }
+                            Row { keys: "Ctrl+P"; text: "Show / hide the preview pane (drag its edge to resize)."; }
+                            Row { keys: "Ctrl+H"; text: "Show / hide hidden files."; }
+                            Row { keys: "Folder sizes button"; text: "Pie-chart button in the toolbar: works out every folder's size and shows a “% of Folder” bar."; }
+                            Row { keys: "Split layout button"; text: "Show 2, 3 or 4 folders at once. Click a pane to work in it; drag files onto another pane to copy or move them there."; }
+                            Row { keys: "Right-click the column header"; text: "Choose list columns (Date Created, Size, Kind…). Drag the dividers to resize."; }
+                            Row { keys: "Each folder remembers"; text: "Its sort and view: sort one folder by Kind and it opens that way next time. Other folders keep the default (Name, A→Z)."; }
+                            Row { keys: "Folders on Top"; text: "View & Sort menu. On (default): folders before files. Off: folders mix in with the files, e.g. by date."; }
+                            Row { keys: "Folder previews"; text: "Settings → Folder icons → Show what's inside folders. Icons and Gallery view show a picture from inside each folder (with Windows folders, exactly as Explorer does). Off by default."; }
+                        }
+
+                        Section {
+                            title: "Quick Look";
+                            Row { keys: "Space"; text: "Preview the selected file: images, PDF, Word, Excel, PowerPoint, Markdown, text, code (with colours), video and audio (they play)."; }
+                            Row { keys: "↑ / ↓"; text: "Previous / next file while previewing, one by one in the folder's sort order."; }
+                            Row { keys: "← / →"; text: "Previous / next PDF page, or scroll a document."; }
+                            Row { keys: "← / →  (video, audio)"; text: "Jump back / forward 10 seconds (or use the ◀◀ ▶▶ buttons); with Shift, a minute."; }
+                            Row { keys: "Space or Esc"; text: "Close Quick Look. “Open” opens the file in its app."; }
+                        }
+
+                        Section {
+                            title: "Search";
+                            intro: "Typing filters the folder you are in straight away; pause for a moment and everything below it is searched too (Enter searches immediately). Clear the box to go back. Mix any of these:";
+                            Row { keys: "invoice"; text: "Names containing “invoice”."; }
+                            Row { keys: "\"annual report\""; text: "Quotes keep words together."; }
+                            Row { keys: "pdf:   docx:   jpg:"; text: "Only that file type (pdf: invoice = PDFs named like invoice)."; }
+                            Row { keys: "ext:jpg,png"; text: "Several types."; }
+                            Row { keys: "kind:image"; text: "image · video · audio · document · code · archive · app · folder."; }
+                            Row { keys: "size:>100mb   size:<1kb"; text: "Bigger / smaller than."; }
+                            Row { keys: "modified:today"; text: "today · yesterday · week · month · year."; }
+                            Row { keys: "pdf: content:\"project cedar\""; text: "Text inside files (PDF, Word, Excel, PowerPoint, Markdown, text, code). Needs a type, so it doesn’t read every file. md: content: \"trading\" works too."; }
+                            Row { keys: "Ctrl+R (in results)"; text: "Show the selected result in its folder."; }
+                        }
+
+                        Section {
+                            title: "Command palette — Ctrl+Shift+P";
+                            intro: "Type a command and press Enter, or type part of any action or folder name (“copy path”, “columns”, “downloads”). Commands work on the folder you are in and on the selected items.";
+                            Row { keys: "mkdir folder1, folder2"; text: "Create folders. Separate names with commas (or spaces; quote names with spaces)."; }
+                            Row { keys: "touch fast.txt, fast.html"; text: "Create empty files. Existing names are skipped, never overwritten."; }
+                            Row { keys: "cd Downloads   cd D:\\work"; text: "Go to a folder: a path, a subfolder, or part of a visited folder’s name."; }
+                            Row { keys: "select *.pdf"; text: "Select by pattern (* any text, ? one letter)."; }
+                            Row { keys: "select size:>100mb"; text: "Select with the search syntax: kind:image, modified:week, pdf: …"; }
+                            Row { keys: "rename *.jpg trip-{n}.jpg"; text: "Rename every match: trip-1.jpg, trip-2.jpg … in the order shown. The palette previews old → new before you press Enter."; }
+                            Row { keys: "rename photo-{nnn}"; text: "Rename the selected items: photo-001, photo-002 … (the extension is kept)."; }
+                            Row { keys: "rename \"draft\" \"final\""; text: "Find & replace in names (selected items, or every name that contains it)."; }
+                            Row { keys: "{n} {nn} {nnn} {name} {ext} {date}"; text: "Rename template parts: number (zero-padded), old name, extension, date modified."; }
+                            Row { keys: "copy to D:\\backup"; text: "Copy the selected items there (the folder is created if needed)."; }
+                            Row { keys: "move to D:\\backup"; text: "Move the selected items there."; }
+                            Row { keys: "zip archive.zip"; text: "Zip the selected items into this folder."; }
+                            Row { keys: "tag work   tag none"; text: "Add a colour tag (by its name or colour) to the selection, or clear tags."; }
+                            Row { keys: "newtab D:\\   term"; text: "New tab · open a terminal here."; }
+                            Row { keys: "!ipconfig   !git status"; text: "Run a command in this folder; its output shows in the palette (Copy button or Ctrl+Shift+C). !!command runs it in a terminal window instead."; }
+                            Row { keys: "save ip = !ipconfig"; text: "Save a command under a short name, then just type “ip”. Words after the name are added to the end (ip /all)."; }
+                            Row { keys: "save vs = !code {dir}"; text: "In saved commands {dir} is this folder, {file} the selected file, {files} all selected, {name} the file name. unsave ip deletes one."; }
+                            Row { keys: "sort kind   sort date down"; text: "Sort this folder: name · date · size · kind · created, up or down."; }
+                            Row { keys: "sort kind all   view icons all"; text: "Also every subfolder, including new ones (replaces what was chosen in them). view: list · icons · columns · gallery."; }
+                            Row { keys: "sort reset   sort reset all"; text: "Back to the default sort and view here (and in every subfolder)."; }
+                            Row { keys: "open group work"; text: "Open a saved tab group by name."; }
+                            Row { keys: "2+3*4   15% of 80   1.5gb in mb"; text: "Calculator: the answer shows as you type; Enter copies it. + − × ÷ ^ %, sqrt( ), round( ), pi, and sizes (kb, mb, gb, tb)."; }
+                        }
+
+                        Section {
+                            title: "Files";
+                            Row { keys: "Ctrl+C  Ctrl+X  Ctrl+V"; text: "Copy, cut, paste (also between this app and Explorer)."; }
+                            Row { keys: "Ctrl+D   F2"; text: "Duplicate · rename."; }
+                            Row { keys: "Del   Shift+Del"; text: "Recycle Bin · delete permanently."; }
+                            Row { keys: "Ctrl+Shift+N   Ctrl+Shift+C"; text: "New folder · copy the path."; }
+                            Row { keys: "Drag & drop"; text: "Drop on a folder, tab, pane or sidebar place. Same drive moves, another drive copies; hold Ctrl to copy, Shift to move. Drag past the window edge to drop files into other apps: Telegram, browsers, email, the desktop, Explorer."; }
+                            Row { keys: "Open in VS Code"; text: "Right-click a file or folder (or empty space: this folder). Only shown when VS Code is installed."; }
+                            Row { keys: "Right-click"; text: "Open With, Send To, tags, Compress… “More Options…” (or Shift+right-click) shows the full Windows menu."; }
+                        }
+
+                        Section {
+                            title: "Tags, tabs and groups";
+                            Row { keys: "Colour dots (right-click)"; text: "Tag files and folders. Tagged folders take the colour. Rename a tag by right-clicking it in the sidebar (e.g. Red → Work)."; }
+                            Row { keys: "Ctrl+T   Ctrl+W   Ctrl+Tab"; text: "New tab · close tab · next tab."; }
+                            Row { keys: "Tab groups"; text: "Save all open tabs under a name (Work, Taxes…) and bring them all back later in one go."; }
+                            Row { keys: "Save a group"; text: "Right-click a tab → Save Tabs as Group…, name it and pick an optional Ctrl+Alt+1…9 shortcut."; }
+                            Row { keys: "Ctrl+Alt+1 … 9"; text: "Open the group with that shortcut."; }
+                            Row { keys: "Open / delete a group"; text: "Right-click a tab → Tab Groups (Delete Group removes one). In the palette: “open group work”."; }
+                            Row { keys: "Settings → remember tabs"; text: "Reopen the tabs you had open when X Finder starts again."; }
+                        }
+
+                        Section {
+                            title: "Settings (gear button, Ctrl+,)";
+                            Row { keys: "Appearance"; text: "System, Light or Dark."; }
+                            Row { keys: "Right-click menu"; text: "This app’s dark menu, or the classic Windows one."; }
+                            Row { keys: "File / folder icons"; text: "Windows or Finder-style file icons; Finder, Windows, GNOME, Ubuntu, KDE or Mint folders."; }
+                            Row { keys: "Sidebar & tabs"; text: "Show Recents / Recycle Bin, remember open tabs after closing."; }
+                            Row { keys: "Default file explorer"; text: "Win+E and folders opened by other apps (Telegram “Show in folder”, downloads, shortcuts…) open here, as a tab if a window is already open, with the new file selected."; }
+                            Row { keys: "Desktop & Start shortcut"; text: "Puts X Finder on the Desktop and in the Start menu; pin it to the taskbar from there."; }
+                        }
+
+                        Text {
+                            text: "Developed by Nardos Zebene";
+                            horizontal-alignment: center;
+                            font-size: Theme.font-label;
+                            color: Theme.text-tertiary;
+                        }
+                    }
+                }
+                SlimScroll {
+                    x: parent.width - self.width - 1px;
+                    y: 0px;
+                    height: parent.height;
+                    content-y <=> help-scroll.content-y;
+                    content-height: help-scroll.content-height;
+                    visible-height: help-scroll.visible-height;
+                }
+            }
+        }
+    }
+}

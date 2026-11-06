@@ -1,0 +1,199 @@
+import { SlimScroll } from "controls.slint";
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { FileRow } from "../types.slint";
+import { TagDots } from "controls.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+component Tile inherits Rectangle {
+    in property <FileRow> file;
+    in property <int> index;
+    in property <bool> focused;
+    callback pressed(ctrl: bool, shift: bool);
+    callback activated();
+    callback middle();
+
+    width: Theme.tile-width;
+    height: Theme.tile-height;
+
+    // Soft plate behind the icon when selected or hovered (Finder style).
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 4px;
+        width: Theme.tile-icon + 14px;
+        height: Theme.tile-icon + 12px;
+        border-radius: 8px;
+        background: drop.has-drag ? Theme.focus-ring : root.file.selected ? Theme.selection-inactive : ta.has-hover ? Theme.hover : transparent;
+        animate background { duration: Theme.fast; easing: ease-out; }
+    }
+
+    if root.file.has-thumb: Image {
+        x: (parent.width - self.width) / 2;
+        y: 10px;
+        width: Theme.tile-icon;
+        height: Theme.tile-icon;
+        source: root.file.thumb;
+        image-fit: contain;
+        opacity: root.file.hidden ? 0.5 : 1.0;
+    }
+    if !root.file.has-thumb && (root.file.icon == "folder" || root.file.icon == "folderlink"): FolderIcon {
+        alias: root.file.icon == "folderlink";
+        peek: root.file.peek;
+        has-peek: root.file.has-peek;
+        x: (parent.width - self.width) / 2;
+        y: 10px;
+        width: Theme.tile-icon;
+        height: Theme.tile-icon;
+        tint: root.file.tint;
+        opacity: root.file.hidden ? 0.5 : 1.0;
+    }
+    if !root.file.has-thumb && root.file.icon != "folder" && root.file.icon != "folderlink": Image {
+        x: (parent.width - self.width) / 2;
+        y: 10px;
+        width: Theme.tile-icon;
+        height: Theme.tile-icon;
+        source: Icons.file(root.file.icon);
+        opacity: root.file.hidden ? 0.5 : 1.0;
+    }
+
+    // Name: up to two lines; selected names sit on an accent pill.
+    if root.file.selected: Rectangle {
+        x: 3px;
+        y: name-text.y - 2px;
+        width: parent.width - 6px;
+        height: min(name-text.preferred-height, 32px) + 4px;
+        border-radius: 5px;
+        background: root.focused ? Theme.selection : Theme.selection-inactive;
+    }
+    name-text := Text {
+        x: 6px;
+        y: Theme.tile-icon + 21px;
+        width: parent.width - 12px;
+        height: 32px;
+        text: root.file.name;
+        font-size: Theme.font-small;
+        horizontal-alignment: center;
+        vertical-alignment: top;
+        wrap: word-wrap;
+        overflow: elide;
+        color: root.file.selected && root.focused ? Theme.selection-text : Theme.text;
+        opacity: root.file.hidden ? 0.6 : 1.0;
+    }
+    if (root.file.tags > 0 && root.file.icon != "folder" && root.file.icon != "folderlink"): TagDots {
+        width: 40px;
+        right-aligned: true;
+        x: (parent.width + Theme.tile-icon) / 2 - self.width + 4px;
+        y: 8px + Theme.tile-icon - 6px;
+        mask: root.file.tags;
+    }
+    if root.file.cursor && !root.file.selected && root.focused: Rectangle {
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.focus-ring;
+    }
+
+    drop := DropArea {
+        enabled: root.file.is-dir;
+        can-drop(e) => {
+            return Bridge.can-drop-row(root.index, e.data) ? e.proposed-action : DragAction.none;
+        }
+        dropped(e) => {
+            Bridge.drop-row(root.index, e.data);
+            return e.proposed-action;
+        }
+    }
+
+    DragArea {
+        data: Bridge.drag-data;
+        allow-copy: true;
+        allow-move: true;
+        drag-image: Icons.file(root.file.icon);
+        ta := TouchArea {
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
+                    if e.button == PointerEventButton.left {
+                        root.pressed(e.modifiers.control, e.modifiers.shift);
+                    } else if e.button == PointerEventButton.middle {
+                        root.middle();
+                    } else if e.button == PointerEventButton.right {
+                        Bridge.row-context(root.index, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    }
+                }
+            }
+            // Double-click is detected in Rust (row-pressed): tiles can be
+            // rebuilt between the two clicks.
+        }
+    }
+}
+
+// Virtualized grid: the ListView scrolls *rows* of tiles, so only the rows on
+// screen exist even for 100k files.
+export component IconGrid inherits Rectangle {
+    in property <bool> focused;
+    callback focus-requested();
+
+    property <length> pad: 12px;
+    // Tell Rust when the icon size changes so thumbnails are fetched at the new size.
+    property <float> size: Bridge.icon-size;
+    changed size => {
+        Bridge.icon-size-changed(root.size);
+    }
+    out property <int> cols: max(1, floor((list.visible-width - 2 * root.pad) / Theme.tile-width));
+    property <int> rows: ceil(Bridge.files.length / root.cols);
+
+    public function scroll-to(index: int) {
+        if index < 0 {
+            return;
+        }
+        let row = floor(index / root.cols);
+        if row * Theme.tile-height < -list.content-y {
+            list.content-y = -row * Theme.tile-height;
+        } else if (row + 1) * Theme.tile-height > -list.content-y + list.visible-height {
+            list.content-y = -((row + 1) * Theme.tile-height - list.visible-height);
+        }
+    }
+
+    public function scroll-top() {
+        list.content-y = 0px;
+    }
+
+    public pure function page-rows() -> int {
+        return max(1, floor(list.visible-height / Theme.tile-height) - 1);
+    }
+
+    background: Theme.surface;
+
+    list := ListView {
+        vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+        width: parent.width;
+        height: parent.height;
+        for r in root.rows: Rectangle {
+            height: Theme.tile-height;
+            HorizontalLayout {
+                padding-left: root.pad;
+                alignment: start;
+                for c in min(root.cols, Bridge.files.length - r * root.cols): Tile {
+                    file: Bridge.files[r * root.cols + c];
+                    index: r * root.cols + c;
+                    focused: root.focused;
+                    pressed(ctrl, shift) => {
+                        root.focus-requested();
+                        Bridge.row-pressed(r * root.cols + c, ctrl, shift);
+                    }
+                    activated => { Bridge.row-activated(r * root.cols + c); }
+                    middle => { Bridge.row-middle(r * root.cols + c); }
+                }
+            }
+        }
+    }
+    SlimScroll {
+        x: list.x + list.width - self.width - 1px;
+        y: list.y;
+        height: list.height;
+        content-y <=> list.content-y;
+        content-height: list.content-height;
+        visible-height: list.visible-height;
+    }
+}

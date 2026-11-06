@@ -1,0 +1,90 @@
+import { Theme } from "../theme.slint";
+import { Bridge, Layout } from "../bridge.slint";
+
+// A plain text button in the banner (Not now, Don't ask again).
+component BannerButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    callback clicked();
+    height: 28px;
+    width: label.preferred-width + 24px;
+    border-radius: 7px;
+    background: root.primary ? (ta.pressed ? Theme.selection : Theme.accent) : (ta.pressed ? Theme.pressed : ta.has-hover ? Theme.hover : transparent);
+    label := Text {
+        text: root.text;
+        font-weight: root.primary ? 600 : 500;
+        color: root.primary ? #ffffff : Theme.text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// "Make X Finder your default file explorer?" — a slim bar under the tabs,
+// shown now and then while it isn't the default (never blocks anything).
+export component ExplorerBanner inherits Rectangle {
+    height: 46px;
+    background: Theme.accent.transparentize(0.9);
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 8px;
+        spacing: 8px;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 22px;
+                height: 22px;
+                source: @image-url("../icons/app-icon.png");
+            }
+        }
+        Text {
+            horizontal-stretch: 1;
+            // Gives way to the buttons on narrow windows (ends in "…").
+            min-width: 60px;
+            preferred-width: 0px;
+            vertical-alignment: center;
+            overflow: elide;
+            color: Theme.text;
+            text: "Make X Finder your default file explorer? Win+E and folders will open here.";
+        }
+        VerticalLayout {
+            alignment: center;
+            BannerButton {
+                text: "Make default";
+                primary: true;
+                clicked => { Bridge.explorer-banner-pick(0); }
+            }
+        }
+        if !Layout.narrow: VerticalLayout {
+            alignment: center;
+            BannerButton {
+                text: "Not now";
+                clicked => { Bridge.explorer-banner-pick(1); }
+            }
+        }
+        if !Layout.narrow: VerticalLayout {
+            alignment: center;
+            BannerButton {
+                text: "Don’t ask again";
+                clicked => { Bridge.explorer-banner-pick(2); }
+            }
+        }
+        // Narrow windows: ✕ (= Not now).
+        if Layout.narrow: VerticalLayout {
+            alignment: center;
+            BannerButton {
+                text: "×";
+                clicked => { Bridge.explorer-banner-pick(1); }
+            }
+        }
+    }
+}

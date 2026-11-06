@@ -1,0 +1,120 @@
+import { Theme } from "../theme.slint";
+
+// Folder icon drawn from vector paths, so any style can be recoloured
+// (a folder tagged red turns red). Styles: 0 Finder, 1 Windows, 2 GNOME
+// (Adwaita), 3 Ubuntu (Yaru), 4 KDE (Breeze), 5 Linux Mint.
+export component FolderIcon inherits Rectangle {
+    // -1 = the style's own colours, else index into Theme.tag-colors.
+    in property <int> tint: -1;
+    in property <int> style: Theme.folder-style;
+    // Shortcut to a folder: small arrow badge, like a Mac alias.
+    in property <bool> alias;
+    // Folder previews: a picture from inside, tucked into the folder.
+    in property <image> peek;
+    in property <bool> has-peek;
+
+    property <color> base-back: root.style == 1 ? #e0a01c
+        : root.style == 2 ? #3584e4
+        : root.style == 3 ? #c4471c
+        : root.style == 4 ? #147eb8
+        : root.style == 5 ? #6a9d3e
+        : #4a9ff0;
+    property <color> base-front: root.style == 1 ? #ffcb45
+        : root.style == 2 ? #62a0ea
+        : root.style == 3 ? #ed6a3a
+        : root.style == 4 ? #3daee9
+        : root.style == 5 ? #8fc05a
+        : #79bdf9;
+    property <color> back: root.tint >= 0 ? Theme.tag-colors[root.tint].darker(0.25) : root.base-back;
+    property <color> front: root.tint >= 0 ? Theme.tag-colors[root.tint].brighter(0.12) : root.base-front;
+
+    // Back sheet with the tab.
+    Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 32;
+        viewbox-height: 32;
+        fill: root.back;
+        commands: root.style == 1 ? "M3 7.5C3 6.7 3.7 6 4.5 6H12l2.5 2.5h13c.8 0 1.5.7 1.5 1.5v14.5c0 .8-.7 1.5-1.5 1.5h-23C3.7 26 3 25.3 3 24.5z"
+            : root.style == 2 ? "M4 9a2 2 0 0 1 2-2h6.2l2 2H26a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"
+            : root.style == 4 ? "M3 7h10.5l2 2.2H29V26H3z"
+            : root.style == 5 ? "M3 8.2C3 7 4 6 5.2 6h6.6l2.2 2.4h12.8c1.2 0 2.2 1 2.2 2.2v13.2c0 1.2-1 2.2-2.2 2.2H5.2C4 26 3 25 3 23.8z"
+            : "M3 8.5C3 7.1 4.1 6 5.5 6h6.4c.7 0 1.3.3 1.8.8L15.5 9h11c1.4 0 2.5 1.1 2.5 2.5V24c0 1.4-1.1 2.5-2.5 2.5h-21C4.1 26.5 3 25.4 3 24z";
+    }
+    // The picture, on a white sheet, sticking out of the folder.
+    if root.has-peek: Rectangle {
+        x: root.width * 6.5 / 32;
+        y: root.height * 3.5 / 32;
+        width: root.width * 19 / 32;
+        height: root.height * 19 / 32;
+        background: #ffffff;
+        border-radius: root.width * 1 / 32;
+        drop-shadow-blur: 2px;
+        drop-shadow-color: #00000040;
+        Image {
+            x: parent.width * 0.05;
+            y: parent.height * 0.05;
+            width: parent.width * 0.9;
+            height: parent.height * 0.9;
+            source: root.peek;
+            image-fit: contain;
+        }
+    }
+    // Front panel (lower when a picture sits in the folder).
+    if root.has-peek: Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 32;
+        viewbox-height: 32;
+        fill: root.front;
+        commands: root.style == 4 ? "M3 18h26v8.5H3z"
+            : "M3 20C3 18.6 4.1 17.5 5.5 17.5h21c1.4 0 2.5 1.1 2.5 2.5V24c0 1.4-1.1 2.5-2.5 2.5h-21C4.1 26.5 3 25.4 3 24z";
+    }
+    if !root.has-peek: Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 32;
+        viewbox-height: 32;
+        fill: root.front;
+        commands: root.style == 1 ? "M3 12c0-.8.7-1.5 1.5-1.5h23c.8 0 1.5.7 1.5 1.5v12.5c0 .8-.7 1.5-1.5 1.5h-23C3.7 26 3 25.3 3 24.5z"
+            : root.style == 2 ? "M4 13.5a2 2 0 0 1 2-2h20a2 2 0 0 1 2 2V24a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"
+            : root.style == 4 ? "M3 11.5h26V26H3z"
+            : root.style == 5 ? "M3 12.6c0-1.2 1-2.2 2.2-2.2h21.6c1.2 0 2.2 1 2.2 2.2v11.2c0 1.2-1 2.2-2.2 2.2H5.2C4 26 3 25 3 23.8z"
+            : "M3 12.5C3 11.1 4.1 10 5.5 10h21c1.4 0 2.5 1.1 2.5 2.5V24c0 1.4-1.1 2.5-2.5 2.5h-21C4.1 26.5 3 25.4 3 24z";
+    }
+    // Style details: Ubuntu's light band, KDE's top stripe.
+    if root.style == 3 && !root.has-peek: Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 32;
+        viewbox-height: 32;
+        fill: #ffffff40;
+        commands: "M3 12.5C3 11.1 4.1 10 5.5 10h21c1.4 0 2.5 1.1 2.5 2.5V14H3z";
+    }
+    if root.style == 4 && !root.has-peek: Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: 32;
+        viewbox-height: 32;
+        fill: #ffffff59;
+        commands: "M3 11.5h26v1.6H3z";
+    }
+    if root.alias: Rectangle {
+        x: root.width * 0.06;
+        y: root.height * 0.56;
+        width: root.width * 0.38;
+        height: self.width;
+        border-radius: self.width * 0.22;
+        background: #ffffff;
+        drop-shadow-blur: 1px;
+        drop-shadow-color: #00000055;
+        Image {
+            x: parent.width * 0.12;
+            y: parent.height * 0.12;
+            width: parent.width * 0.76;
+            height: parent.height * 0.76;
+            source: @image-url("../icons/g-alias.svg");
+            colorize: #1d1d1f;
+        }
+    }
+}

@@ -1,0 +1,368 @@
+import { SlimScroll } from "controls.slint";
+import { Theme } from "../theme.slint";
+import { Bridge } from "../bridge.slint";
+import { ScrollView } from "std-widgets.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in property <int> value;
+    callback changed-to(index: int);
+
+    height: 30px;
+    border-radius: Theme.r-control + 1px;
+    background: Theme.field;
+    HorizontalLayout {
+        padding: 2px;
+        for o[i] in root.options: Rectangle {
+            horizontal-stretch: 1;
+            border-radius: Theme.r-control - 1px;
+            background: i == root.value ? Theme.accent : ta.has-hover ? Theme.hover : transparent;
+            animate background { duration: Theme.fast; easing: ease-out; }
+            Text {
+                text: o;
+                font-size: Theme.font-small;
+                font-weight: i == root.value ? 600 : 400;
+                color: i == root.value ? #ffffff : Theme.text;
+            }
+            ta := TouchArea {
+                clicked => { root.changed-to(i); }
+            }
+        }
+    }
+}
+
+component Toggle inherits Rectangle {
+    in property <bool> on;
+    callback toggled();
+    width: 38px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.on ? Theme.accent : Theme.pressed;
+    animate background { duration: Theme.fast; easing: ease-out; }
+    Rectangle {
+        x: root.on ? parent.width - self.width - 2px : 2px;
+        y: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: #ffffff;
+        drop-shadow-blur: 2px;
+        drop-shadow-color: #00000040;
+        animate x { duration: Theme.normal; easing: ease-out; }
+    }
+    TouchArea {
+        clicked => { root.toggled(); }
+    }
+}
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    in property <string> hint;
+    spacing: 6px;
+    Text {
+        text: root.title;
+        font-weight: 600;
+        color: Theme.text;
+    }
+    @children
+    if root.hint != "": Text {
+        text: root.hint;
+        wrap: word-wrap;
+        font-size: Theme.font-label;
+        color: Theme.text-tertiary;
+    }
+}
+
+component ToggleRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <bool> on;
+    callback toggled();
+    spacing: 12px;
+    Text {
+        horizontal-stretch: 1;
+        text: root.label;
+        vertical-alignment: center;
+        color: Theme.text;
+    }
+    VerticalLayout {
+        alignment: center;
+        Toggle {
+            on: root.on;
+            toggled => { root.toggled(); }
+        }
+    }
+}
+
+component FolderChoice inherits Rectangle {
+    in property <int> style;
+    in property <string> label;
+    in property <bool> chosen;
+    callback picked();
+    height: 82px;
+    border-radius: 8px;
+    background: root.chosen ? Theme.selection-inactive : ta.has-hover ? Theme.hover : transparent;
+    border-width: root.chosen ? 2px : 0px;
+    border-color: Theme.accent;
+    FolderIcon {
+        x: (parent.width - self.width) / 2;
+        y: 8px;
+        width: 44px;
+        height: 44px;
+        style: root.style;
+    }
+    Text {
+        y: 56px;
+        width: parent.width;
+        text: root.label;
+        horizontal-alignment: center;
+        font-size: Theme.font-label;
+        color: Theme.text;
+    }
+    ta := TouchArea {
+        clicked => { root.picked(); }
+    }
+}
+
+// Settings page (gear button or Ctrl+,). Changes apply and save immediately.
+export component SettingsDialog inherits Rectangle {
+    background: #00000066;
+
+    TouchArea {
+        clicked => { Bridge.settings-set("close", 0); }
+    }
+
+    Rectangle {
+        width: min(540px, parent.width - 48px);
+        height: min(720px, parent.height - 40px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.r-panel;
+        background: Theme.window;
+        border-width: 1px;
+        border-color: Theme.menu-border;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #00000070;
+        clip: true;
+
+        TouchArea { }
+
+        VerticalLayout {
+            padding: 24px;
+            padding-bottom: 18px;
+            spacing: 14px;
+
+            Text {
+                text: "Settings";
+                font-size: 20px;
+                font-weight: 650;
+                color: Theme.text;
+            }
+
+          Rectangle {
+              vertical-stretch: 1;
+              body-scroll := ScrollView {
+                            width: parent.width;
+                            height: parent.height;
+                            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                            content-width: self.visible-width;
+                content-height: body.preferred-height;
+                body := VerticalLayout {
+                width: parent.width;
+                padding-left: 3px;
+                padding-right: 26px;
+                spacing: 18px;
+
+                Section {
+                    title: "Appearance";
+                    Segmented {
+                        options: ["System", "Light", "Dark"];
+                        value: Bridge.set-appearance;
+                        changed-to(i) => { Bridge.settings-set("appearance", i); }
+                    }
+                }
+
+                Section {
+                    title: "Right-click menu";
+                    hint: "The app menu is fast and follows the dark theme; its “More Options…” shows the full Windows menu. Hold Shift while right-clicking to get the other one.";
+                    Segmented {
+                        options: ["App menu", "Windows menu"];
+                        value: Bridge.set-menu-style;
+                        changed-to(i) => { Bridge.settings-set("menu", i); }
+                    }
+                }
+
+                Section {
+                    title: "File icons";
+                    hint: "Windows icons show each file's real icon (app icons for .exe, your video player's icon for .mp4).";
+                    Segmented {
+                        options: ["Windows icons", "Finder-style icons"];
+                        value: Bridge.set-icon-style;
+                        changed-to(i) => { Bridge.settings-set("icons", i); }
+                    }
+                }
+
+                Section {
+                    title: "Folder icons";
+                    hint: "Folders tagged with a colour take that colour in every style.";
+                    HorizontalLayout {
+                        spacing: 6px;
+                        for f[i] in ["Finder", "Windows", "GNOME", "Ubuntu", "KDE", "Mint"]: FolderChoice {
+                            horizontal-stretch: 1;
+                            style: i;
+                            label: f;
+                            chosen: Bridge.set-folder-style == i;
+                            picked => { Bridge.settings-set("folder-style", i); }
+                        }
+                    }
+                    ToggleRow {
+                        label: "Show what's inside folders (Icons and Gallery view)";
+                        on: Bridge.set-folder-previews;
+                        toggled => { Bridge.settings-set("folder-previews", Bridge.set-folder-previews ? 0 : 1); }
+                    }
+                }
+
+                Section {
+                    title: "Open folders as";
+                    Segmented {
+                        options: ["List", "Icons", "Columns", "Gallery"];
+                        value: Bridge.set-start-view;
+                        changed-to(i) => { Bridge.settings-set("start-view", i); }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 12px;
+                    ToggleRow {
+                        label: "Show Recents in the sidebar";
+                        on: Bridge.set-show-recents;
+                        toggled => { Bridge.settings-set("recents", Bridge.set-show-recents ? 0 : 1); }
+                    }
+                    ToggleRow {
+                        label: "Show Recycle Bin in the sidebar";
+                        on: Bridge.set-show-trash;
+                        toggled => { Bridge.settings-set("trash", Bridge.set-show-trash ? 0 : 1); }
+                    }
+                    ToggleRow {
+                        label: "Use as the default file explorer (opening folders from other apps)";
+                        on: Bridge.set-default-explorer;
+                        toggled => { Bridge.settings-set("default-explorer", Bridge.set-default-explorer ? 0 : 1); }
+                    }
+                    ToggleRow {
+                        label: "Shortcut on the Desktop and in the Start menu";
+                        on: Bridge.set-app-shortcuts;
+                        toggled => { Bridge.settings-set("app-shortcuts", Bridge.set-app-shortcuts ? 0 : 1); }
+                    }
+                    ToggleRow {
+                        label: "Alternating row colours in lists";
+                        on: Bridge.set-striped-rows;
+                        toggled => { Bridge.settings-set("striped-rows", Bridge.set-striped-rows ? 0 : 1); }
+                    }
+                    ToggleRow {
+                        label: "Remember open tabs after closing";
+                        on: Bridge.set-restore-tabs;
+                        toggled => { Bridge.settings-set("restore-tabs", Bridge.set-restore-tabs ? 0 : 1); }
+                    }
+                    ToggleRow {
+                        label: "Show hidden files";
+                        on: Bridge.show-hidden;
+                        toggled => { Bridge.settings-set("hidden", Bridge.show-hidden ? 0 : 1); }
+                    }
+                    ToggleRow {
+                        label: "Column view shows the full path from the drive";
+                        on: Bridge.columns-absolute;
+                        toggled => { Bridge.settings-set("columns-full", Bridge.columns-absolute ? 0 : 1); }
+                    }
+                }
+
+                }
+              }
+    SlimScroll {
+        x: parent.width - self.width - 1px;
+        y: 0px;
+        height: parent.height;
+        content-y <=> body-scroll.content-y;
+        content-height: body-scroll.content-height;
+        visible-height: body-scroll.visible-height;
+    }
+          }
+
+            HorizontalLayout {
+                spacing: 10px;
+                Rectangle {
+                    width: reset-label.preferred-width + 24px;
+                    height: 30px;
+                    border-radius: Theme.r-control;
+                    background: reset-ta.pressed ? Theme.pressed : Theme.field;
+                    reset-label := Text {
+                        text: "Reset sidebar";
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                    }
+                    reset-ta := TouchArea {
+                        clicked => { Bridge.settings-set("reset-favorites", 1); }
+                    }
+                }
+                Rectangle {
+                    width: tags-label.preferred-width + 24px;
+                    height: 30px;
+                    border-radius: Theme.r-control;
+                    background: tags-ta.pressed ? Theme.pressed : Theme.field;
+                    tags-label := Text {
+                        text: "Reset tag names";
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                    }
+                    tags-ta := TouchArea {
+                        clicked => { Bridge.settings-set("reset-tags", 1); }
+                    }
+                }
+                Rectangle {
+                    width: help-label.preferred-width + 24px;
+                    height: 30px;
+                    border-radius: Theme.r-control;
+                    background: help-ta.pressed ? Theme.pressed : Theme.field;
+                    help-label := Text {
+                        text: "Help";
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                    }
+                    help-ta := TouchArea {
+                        clicked => {
+                            Bridge.settings-set("close", 0);
+                            Bridge.help-open = true;
+                        }
+                    }
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: "Saved automatically";
+                    vertical-alignment: center;
+                    font-size: Theme.font-label;
+                    color: Theme.text-tertiary;
+                }
+                Rectangle {
+                    width: done-label.preferred-width + 32px;
+                    height: 30px;
+                    border-radius: Theme.r-control;
+                    background: done-ta.pressed ? Theme.selection : Theme.accent;
+                    done-label := Text {
+                        text: "Done";
+                        font-size: Theme.font-small;
+                        font-weight: 600;
+                        color: #ffffff;
+                    }
+                    done-ta := TouchArea {
+                        clicked => { Bridge.settings-set("close", 0); }
+                    }
+                }
+            }
+            Text {
+                text: "X Finder 1.0  ·  Developed by Nardos Zebene";
+                horizontal-alignment: center;
+                font-size: Theme.font-label;
+                color: Theme.text-tertiary;
+            }
+        }
+    }
+}

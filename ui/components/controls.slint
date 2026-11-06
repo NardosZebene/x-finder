@@ -1,0 +1,220 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+
+// The one tooltip on screen (drawn by TipBubble on top of everything).
+export global Tip {
+    in-out property <string> text;
+    in-out property <length> x;
+    in-out property <length> y;
+    in-out property <bool> shown;
+}
+
+// Shows `tip` under its parent after hovering for a moment. Place it inside
+// the element, filling it, with `hovering` bound to that element's hover.
+export component TipSource inherits Rectangle {
+    in property <string> tip;
+    in property <bool> hovering;
+    property <bool> armed;
+
+    Timer {
+        interval: 550ms;
+        running: root.hovering && !root.armed && root.tip != "";
+        triggered => {
+            root.armed = true;
+            Tip.text = root.tip;
+            Tip.x = root.absolute-position.x + root.width / 2;
+            Tip.y = root.absolute-position.y + root.height + 6px;
+            Tip.shown = true;
+        }
+    }
+    changed hovering => {
+        if !self.hovering {
+            if self.armed && Tip.text == self.tip {
+                Tip.shown = false;
+            }
+            self.armed = false;
+        }
+    }
+}
+
+// The tooltip itself; put it last in the window.
+export component TipBubble inherits Rectangle {
+    // Window size, to keep the bubble on screen.
+    in property <length> area-width;
+    x: max(6px, min(root.area-width - self.width - 6px, Tip.x - self.width / 2));
+    y: Tip.y;
+    width: label.preferred-width + 18px;
+    height: 24px;
+    border-radius: 6px;
+    background: Theme.menu-bg;
+    border-width: 1px;
+    border-color: Theme.menu-border;
+    drop-shadow-blur: 10px;
+    drop-shadow-color: #00000044;
+    drop-shadow-offset-y: 2px;
+    label := Text {
+        text: Tip.text;
+        font-size: Theme.font-small;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Theme.text;
+    }
+}
+
+// Borderless toolbar button with a tinted line icon.
+export component IconButton inherits Rectangle {
+    in property <string> glyph;
+    // Hover tooltip ("Back", "Refresh (F5)", …).
+    in property <string> tip;
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    in property <length> icon-size: 16px;
+    callback clicked();
+
+    width: 30px;
+    height: 28px;
+    border-radius: Theme.r-control;
+    background: !root.enabled ? transparent : ta.pressed ? Theme.pressed : (ta.has-hover || root.active) ? Theme.hover : transparent;
+    animate background { duration: Theme.fast; easing: ease-out; }
+
+    Image {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.icon-size;
+        height: root.icon-size;
+        source: Icons.glyph(root.glyph);
+        colorize: !root.enabled ? Theme.text-tertiary : root.active ? Theme.accent : Theme.text-secondary;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            Tip.shown = false;
+            root.clicked();
+        }
+    }
+    TipSource {
+        width: parent.width;
+        height: parent.height;
+        tip: root.tip;
+        hovering: ta.has-hover;
+    }
+}
+
+// Draggable divider. `grows-left` means dragging left makes the panel wider
+// (a panel on the right side).
+export component Splitter inherits Rectangle {
+    in property <length> target-width;
+    in property <bool> grows-left;
+    in property <length> minimum: 120px;
+    in property <length> maximum: 2000px;
+    callback resized(width: length);
+
+    // Wide enough to grab easily; only the 1px line in the middle is drawn.
+    width: 11px;
+    property <length> start-width;
+    property <length> start-x;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        width: ta.has-hover || ta.pressed ? 2px : 1px;
+        background: ta.has-hover || ta.pressed ? Theme.accent : Theme.border;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: col-resize;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.start-width = root.target-width;
+                root.start-x = self.absolute-position.x + self.mouse-x;
+            }
+        }
+        moved => {
+            if self.pressed {
+                let dx = self.absolute-position.x + self.mouse-x - root.start-x;
+                root.resized(max(root.minimum, min(root.maximum, root.start-width + (root.grows-left ? -dx : dx))));
+            }
+        }
+    }
+}
+
+// Small overlapping colour dots for a file's tags.
+export component TagDots inherits HorizontalLayout {
+    in property <int> mask;
+    in property <bool> right-aligned;
+    height: 10px;
+    // Each set tag takes 12px (a 10px dot and a small gap); tags that aren't
+    // set take no room at all, so dots line up the same whatever the colour.
+    spacing: 0px;
+    alignment: root.right-aligned ? LayoutAlignment.end : LayoutAlignment.start;
+    for c[i] in Theme.tag-colors: Rectangle {
+        property <bool> on: Math.mod(floor(root.mask / Math.pow(2, i)), 2) == 1;
+        width: self.on ? 12px : 0px;
+        height: 10px;
+        visible: self.on;
+        Rectangle {
+            x: root.right-aligned ? 2px : 0px;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background: c;
+        }
+    }
+}
+
+// Slim overlay scrollbar (thin rounded thumb that widens on hover), used
+// instead of the style's own bar: put it over a ListView/ScrollView whose
+// `vertical-scrollbar-policy` is `always-off` and bind `content-y` both ways.
+export component SlimScroll inherits Rectangle {
+    in-out property <length> content-y;
+    in property <length> content-height;
+    in property <length> visible-height;
+    property <length> maximum: max(0px, root.content-height - root.visible-height);
+    property <bool> hot: ta.has-hover || ta.pressed;
+    property <length> travel: max(1px, root.height - 6px - thumb.height);
+
+    width: 12px;
+    visible: root.maximum > 0;
+    border-radius: 6px;
+    background: root.hot ? Theme.text.with-alpha(0.07) : transparent;
+    animate background { duration: 120ms; easing: ease-out; }
+
+    thumb := Rectangle {
+        width: root.hot ? 8px : 5px;
+        x: (parent.width - self.width) / 2;
+        height: max(32px, (parent.height - 6px) * root.visible-height / max(1px, root.content-height));
+        y: 3px + root.travel * (-root.content-y / max(1px, root.maximum));
+        border-radius: self.width / 2;
+        background: Theme.text.with-alpha(ta.pressed ? 0.55 : root.hot ? 0.42 : 0.26);
+        animate width, background { duration: 120ms; easing: ease-out; }
+    }
+
+    ta := TouchArea {
+        property <length> press-y;
+        property <length> press-value;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                // A click on the track jumps there; then drag from that spot.
+                if self.mouse-y < thumb.y || self.mouse-y > thumb.y + thumb.height {
+                    root.content-y = -max(0px, min(root.maximum,
+                        (self.mouse-y - 3px - thumb.height / 2) / root.travel * root.maximum));
+                }
+                self.press-y = self.mouse-y;
+                self.press-value = -root.content-y;
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.content-y = -max(0px, min(root.maximum,
+                    self.press-value + (self.mouse-y - self.press-y) / root.travel * root.maximum));
+            }
+        }
+        scroll-event(e) => {
+            if e.delta-y != 0 {
+                root.content-y = max(-root.maximum, min(0px, root.content-y + e.delta-y));
+                return accept;
+            }
+            reject
+        }
+    }
+}

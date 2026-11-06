@@ -1,0 +1,4 @@
+﻿/target
+
+# Packaged builds, promo videos and recordings (published as GitHub releases)
+/dist/

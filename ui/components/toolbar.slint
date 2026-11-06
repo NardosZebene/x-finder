@@ -1,0 +1,344 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge, Layout } from "../bridge.slint";
+import { IconButton, TipSource } from "controls.slint";
+
+component CrumbButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> last;
+    in property <bool> first;
+    callback clicked();
+
+    height: 24px;
+    border-radius: 5px;
+    background: ta.pressed ? Theme.pressed : ta.has-hover && !root.last ? Theme.hover : transparent;
+    animate background { duration: Theme.fast; easing: ease-out; }
+    horizontal-stretch: root.last ? 1 : 0;
+    // On deep paths the middle crumbs shrink to "…"; the root and the
+    // current folder always stay readable.
+    min-width: root.first || root.last ? label.preferred-width + (root.first ? 6px : 18px) : 30px;
+
+    HorizontalLayout {
+        spacing: 2px;
+        if !root.first: Image {
+            width: 10px;
+            source: Icons.glyph("crumb");
+            colorize: Theme.text-tertiary;
+            image-fit: contain;
+        }
+        label := Text {
+            text: root.label;
+            vertical-alignment: center;
+            overflow: elide;
+            font-weight: root.last ? 600 : 400;
+            font-size: root.last ? 14px : Theme.font-base;
+            color: root.last ? Theme.text : Theme.text-secondary;
+        }
+        Rectangle { width: 4px; }
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Toolbar inherits Rectangle {
+    out property <bool> editing: false;
+    out property <bool> text-focused: path-input.has-focus || filter-input.has-focus;
+    // Asks the window to give keyboard focus back to the file list.
+    callback done();
+
+    public function edit-path() {
+        root.editing = true;
+        path-input.text = Bridge.path-text;
+        path-input.focus();
+        path-input.select-all();
+    }
+
+    public function cancel-edit() {
+        root.editing = false;
+    }
+
+    public function focus-filter() {
+        filter-input.focus();
+        filter-input.select-all();
+    }
+
+    // Narrow windows: search is a magnifier until it's used.
+    property <bool> search-wide: !Layout.narrow || filter-input.has-focus || filter-input.text != "";
+    // Very narrow and searching: the search takes the room of Up, Settings
+    // and "⋯" (they're back when the search is closed).
+    property <bool> squeeze: Layout.narrow && root.search-wide && Layout.window-width < 700px;
+
+    height: Theme.toolbar-height;
+    background: Theme.toolbar;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 2px;
+
+        if Layout.narrow: IconButton {
+            glyph: "sidebar";
+            tip: "Sidebar";
+            active: Layout.sidebar-open;
+            clicked => { Layout.sidebar-open = !Layout.sidebar-open; }
+        }
+
+        IconButton {
+            glyph: "back";
+            tip: "Back";
+            enabled: Bridge.can-back;
+            clicked => { Bridge.back(); }
+        }
+        IconButton {
+            glyph: "forward";
+            tip: "Forward";
+            enabled: Bridge.can-forward;
+            clicked => { Bridge.forward(); }
+        }
+        if !root.squeeze: IconButton {
+            glyph: "up";
+            tip: "Enclosing folder";
+            enabled: Bridge.can-up;
+            clicked => { Bridge.up(); }
+        }
+
+        Rectangle { width: 8px; }
+
+        // Breadcrumbs; click the empty part (or press Ctrl+L) to type a path.
+        path-area := Rectangle {
+            horizontal-stretch: 1;
+            min-width: Layout.narrow ? 70px : 120px;
+            border-radius: Theme.r-control;
+            background: root.editing ? Theme.surface : path-ta.has-hover ? Theme.hover : transparent;
+            border-width: root.editing ? 2px : 0px;
+            border-color: Theme.focus-ring;
+            clip: true;
+
+            path-ta := TouchArea {
+                mouse-cursor: text;
+                clicked => { root.edit-path(); }
+            }
+
+            if !root.editing: HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                spacing: 0px;
+                alignment: start;
+                for c[i] in Bridge.crumbs: CrumbButton {
+                    label: c.label;
+                    first: i == 0;
+                    last: i == Bridge.crumbs.length - 1;
+                    clicked => { Bridge.crumb-clicked(i); }
+                }
+            }
+
+            path-input := TextInput {
+                visible: root.editing;
+                x: 10px;
+                width: parent.width - 20px;
+                height: parent.height;
+                vertical-alignment: center;
+                single-line: true;
+                color: Theme.text;
+                selection-background-color: Theme.focus-ring;
+                font-size: Theme.font-base;
+                accepted => {
+                    root.editing = false;
+                    Bridge.path-entered(self.text);
+                    root.done();
+                }
+                changed has-focus => {
+                    if !self.has-focus {
+                        root.editing = false;
+                    }
+                }
+            }
+        }
+
+        Rectangle { width: 8px; }
+
+        // View switcher: list / icons / columns (Ctrl+1/2/3)
+        Rectangle {
+            width: 4 * 32px + 4px;
+            border-radius: Theme.r-control + 1px;
+            background: Theme.field;
+            HorizontalLayout {
+                padding: 2px;
+                for v[i] in ["list", "grid", "columns", "gallery"]: Rectangle {
+                    width: 32px;
+                    border-radius: Theme.r-control - 1px;
+                    background: Bridge.view-mode == i ? Theme.window : vta.has-hover ? Theme.hover : transparent;
+                    drop-shadow-blur: Bridge.view-mode == i ? 2px : 0px;
+                    drop-shadow-color: #00000030;
+                    drop-shadow-offset-y: 0.5px;
+                    animate background { duration: Theme.fast; easing: ease-out; }
+                    Image {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 15px;
+                        height: 15px;
+                        source: Icons.glyph(v);
+                        colorize: Bridge.view-mode == i ? Theme.text : Theme.text-secondary;
+                    }
+                    vta := TouchArea {
+                        clicked => { Bridge.set-view(i); }
+                    }
+                    TipSource {
+                        width: parent.width;
+                        height: parent.height;
+                        tip: ["List view (Ctrl+1)", "Icon view (Ctrl+2)", "Column view (Ctrl+3)", "Gallery view (Ctrl+4)"][i];
+                        hovering: vta.has-hover;
+                    }
+                }
+            }
+        }
+
+        if !Layout.compact: Rectangle { width: 4px; }
+
+        // Split layouts flyout (2 or 4 folders side by side).
+        if !Layout.compact: IconButton {
+            glyph: "layout";
+            tip: "Split layout";
+            active: Bridge.layout > 0 || Bridge.layout-picker-open;
+            clicked => {
+                Bridge.layout-picker-x = self.absolute-position.x + self.width / 2;
+                Bridge.layout-picker-y = self.absolute-position.y + self.height;
+                Bridge.layout-picker-open = !Bridge.layout-picker-open;
+            }
+        }
+
+        Rectangle { width: 4px; }
+
+        if !Layout.narrow: IconButton {
+            glyph: "panel";
+            tip: "Preview pane";
+            active: Bridge.preview-pane;
+            enabled: Bridge.view-mode <= 1;
+            clicked => { Bridge.toggle-preview-pane(); }
+        }
+        if !Layout.compact: IconButton {
+            glyph: "sizes";
+            tip: "Folder sizes";
+            active: Bridge.show-sizes;
+            clicked => { Bridge.toggle-sizes(); }
+        }
+        if !Layout.compact: IconButton {
+            glyph: "eye";
+            tip: "Show hidden files";
+            active: Bridge.show-hidden;
+            clicked => { Bridge.toggle-hidden(); }
+        }
+        if !Layout.compact: IconButton {
+            glyph: "refresh";
+            tip: "Refresh (F5)";
+            clicked => { Bridge.refresh(); }
+        }
+        if !Layout.compact: IconButton {
+            glyph: "terminal";
+            tip: "Command palette (Ctrl+Shift+P)";
+            clicked => { Bridge.palette-show(""); }
+        }
+        if !root.squeeze: IconButton {
+            glyph: "settings";
+            tip: "Settings (Ctrl+,)";
+            clicked => { Bridge.settings-set("open", 1); }
+        }
+        if Layout.compact && !root.squeeze: IconButton {
+            glyph: "more";
+            tip: "More";
+            clicked => { Bridge.toolbar-more(self.absolute-position.x, self.absolute-position.y + self.height); }
+        }
+
+        Rectangle { width: 8px; }
+
+        // Filters the current folder as you type (Ctrl+F).
+        Rectangle {
+            width: !root.search-wide ? 30px : Layout.narrow ? 160px : 240px;
+            animate width { duration: Theme.fast; easing: ease-out; }
+            clip: true;
+            border-radius: Theme.r-control;
+            background: Theme.field;
+            border-width: filter-input.has-focus ? 2px : 0px;
+            border-color: Theme.focus-ring;
+
+            Image {
+                x: 8px;
+                y: (parent.height - self.height) / 2;
+                width: 14px;
+                height: 14px;
+                source: Icons.glyph("search");
+                colorize: Theme.text-secondary;
+            }
+            // Hover the magnifier for the search syntax.
+            Rectangle {
+                x: 2px;
+                width: 26px;
+                search-help := TouchArea { }
+                TipSource {
+                    width: parent.width;
+                    height: parent.height;
+                    tip: "pdf:  kind:image  size:>5mb  modified:week  md: content:\"text inside\"  ·  searches subfolders as you type";
+                    hovering: search-help.has-hover;
+                }
+            }
+
+            // Collapsed: the whole magnifier opens the search.
+            if !root.search-wide: TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.focus-filter(); }
+            }
+
+            Text {
+                x: 28px;
+                height: parent.height;
+                visible: filter-input.text == "" && root.search-wide;
+                text: Layout.narrow ? "Search" : "Search here and in subfolders";
+                vertical-alignment: center;
+                color: Theme.text-tertiary;
+            }
+
+            filter-input := TextInput {
+                x: 28px;
+                width: parent.width - 28px - 26px;
+                height: parent.height;
+                vertical-alignment: center;
+                single-line: true;
+                color: Theme.text;
+                selection-background-color: Theme.focus-ring;
+                text <=> Bridge.filter-text;
+                edited => { Bridge.filter-changed(self.text); }
+                accepted => {
+                    Bridge.search-submit(self.text);
+                    root.done();
+                }
+            }
+
+            if filter-input.text != "": Rectangle {
+                x: parent.width - 24px;
+                y: (parent.height - self.height) / 2;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: clear-ta.has-hover ? Theme.pressed : transparent;
+                Image {
+                    x: 4px;
+                    y: 4px;
+                    width: 10px;
+                    height: 10px;
+                    source: Icons.glyph("close");
+                    colorize: Theme.text-secondary;
+                }
+                clear-ta := TouchArea {
+                    clicked => {
+                        Bridge.filter-text = "";
+                        Bridge.filter-changed("");
+                    }
+                }
+            }
+        }
+    }
+}

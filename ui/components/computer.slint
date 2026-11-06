@@ -1,0 +1,204 @@
+import { SlimScroll } from "controls.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { PcCard } from "../types.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+// A folder tile: the folder icon with its symbol embossed on the front, like
+// macOS special folders.
+component FolderCard inherits Rectangle {
+    in property <PcCard> card;
+    in property <bool> chosen;
+    callback picked();
+    callback opened();
+    callback context(x: length, y: length);
+
+    height: 64px;
+    border-radius: 10px;
+    background: root.chosen ? Theme.selection-inactive : ta.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.fast; easing: ease-out; }
+
+    FolderIcon {
+        x: 10px;
+        y: (parent.height - self.height) / 2;
+        width: 46px;
+        height: 46px;
+    }
+    Image {
+        x: 10px + 23px - self.width / 2;
+        y: (parent.height - self.height) / 2 + 5px;
+        width: 15px;
+        height: 15px;
+        source: Icons.glyph(root.card.icon);
+        colorize: #00000059;
+    }
+    Text {
+        x: 66px;
+        width: parent.width - 74px;
+        height: parent.height;
+        text: root.card.label;
+        vertical-alignment: center;
+        overflow: elide;
+        font-size: Theme.font-base;
+        color: Theme.text;
+    }
+    ta := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.picked();
+                if e.button == PointerEventButton.right {
+                    root.context(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                }
+            }
+        }
+        double-clicked => { root.opened(); }
+    }
+}
+
+// A drive tile: picture, name, a slim capacity bar and free space.
+component DriveCard inherits Rectangle {
+    in property <PcCard> card;
+    in property <bool> chosen;
+    callback picked();
+    callback opened();
+    callback context(x: length, y: length);
+
+    height: 80px;
+    border-radius: 12px;
+    background: root.chosen ? Theme.selection-inactive : ta.has-hover ? Theme.hover : Theme.field;
+    animate background { duration: Theme.fast; easing: ease-out; }
+
+    Image {
+        x: 12px;
+        y: (parent.height - self.height) / 2;
+        width: 56px;
+        height: 56px;
+        source: Icons.drive(root.card.icon);
+    }
+    VerticalLayout {
+        x: 80px;
+        width: parent.width - 96px;
+        height: parent.height;
+        alignment: center;
+        spacing: 6px;
+        Text {
+            text: root.card.label;
+            overflow: elide;
+            font-size: Theme.font-base;
+            font-weight: 600;
+            color: Theme.text;
+        }
+        if root.card.has-bar: Rectangle {
+            height: 6px;
+            border-radius: 3px;
+            background: Theme.dark ? #ffffff1f : #0000001a;
+            Rectangle {
+                x: 0px;
+                width: max(6px, parent.width * root.card.used);
+                border-radius: 3px;
+                background: root.card.used > 0.9 ? Theme.danger : root.card.used > 0.75 ? #ff9f0a : Theme.accent;
+            }
+        }
+        Text {
+            text: root.card.detail;
+            overflow: elide;
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+        }
+    }
+    ta := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.picked();
+                if e.button == PointerEventButton.right {
+                    root.context(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                }
+            }
+        }
+        double-clicked => { root.opened(); }
+    }
+}
+
+// "This PC": your folders and your drives with how full they are.
+export component ComputerView inherits Rectangle {
+    property <int> chosen-section: -1;
+    property <int> chosen-index: -1;
+    background: Theme.surface;
+
+    sv := ScrollView {
+        vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+        width: parent.width;
+        height: parent.height;
+        content-width: self.visible-width;
+        content-height: page.preferred-height;
+
+        page := VerticalLayout {
+            width: sv.visible-width;
+            padding: 28px;
+            spacing: 14px;
+
+            property <length> inner: sv.visible-width - 56px;
+            property <int> fcols: max(1, floor((self.inner + 10px) / 210px));
+            property <int> dcols: max(1, floor((self.inner + 14px) / 320px));
+            property <length> fw: (self.inner - (self.fcols - 1) * 10px) / self.fcols;
+            property <length> dw: (self.inner - (self.dcols - 1) * 14px) / self.dcols;
+
+            Text {
+                text: "Folders";
+                font-size: Theme.font-small;
+                font-weight: 600;
+                color: Theme.text-secondary;
+            }
+            Rectangle {
+                height: ceil(Bridge.pc-folders.length / page.fcols) * 74px;
+                for f[i] in Bridge.pc-folders: FolderCard {
+                    x: Math.mod(i, page.fcols) * (page.fw + 10px);
+                    y: floor(i / page.fcols) * 74px;
+                    width: page.fw;
+                    card: f;
+                    chosen: root.chosen-section == 0 && root.chosen-index == i;
+                    picked => {
+                        root.chosen-section = 0;
+                        root.chosen-index = i;
+                    }
+                    opened => { Bridge.pc-open(0, f.index); }
+                    context(x, y) => { Bridge.pc-context(0, f.index, x, y); }
+                }
+            }
+
+            Rectangle { height: 8px; }
+            Text {
+                text: "Devices and Drives";
+                font-size: Theme.font-small;
+                font-weight: 600;
+                color: Theme.text-secondary;
+            }
+            Rectangle {
+                height: ceil(Bridge.pc-drives.length / page.dcols) * 94px;
+                for d[i] in Bridge.pc-drives: DriveCard {
+                    x: Math.mod(i, page.dcols) * (page.dw + 14px);
+                    y: floor(i / page.dcols) * 94px;
+                    width: page.dw;
+                    card: d;
+                    chosen: root.chosen-section == 1 && root.chosen-index == i;
+                    picked => {
+                        root.chosen-section = 1;
+                        root.chosen-index = i;
+                    }
+                    opened => { Bridge.pc-open(1, d.index); }
+                    context(x, y) => { Bridge.pc-context(1, d.index, x, y); }
+                }
+            }
+        }
+    }
+    SlimScroll {
+        x: sv.x + sv.width - self.width - 2px;
+        y: sv.y;
+        height: sv.height;
+        content-y <=> sv.content-y;
+        content-height: sv.content-height;
+        visible-height: sv.visible-height;
+    }
+}

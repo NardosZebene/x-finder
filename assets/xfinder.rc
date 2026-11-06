@@ -1,0 +1,29 @@
+// Icon and file details for X Finder.exe (taskbar, pins, shortcuts and
+// the Properties > Details tab read these).
+1 ICON "xfinder.ico"
+
+1 VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Nardos Zebene"
+      VALUE "FileDescription", "X Finder"
+      VALUE "FileVersion", "1.0.0"
+      VALUE "InternalName", "X Finder"
+      VALUE "LegalCopyright", "Developed by Nardos Zebene"
+      VALUE "OriginalFilename", "X Finder.exe"
+      VALUE "ProductName", "X Finder"
+      VALUE "ProductVersion", "1.0.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END

@@ -1,0 +1,222 @@
+// Command palette (Ctrl+Shift+P) / quick jump (Ctrl+G): type a command
+// ("mkdir a, b", "touch x.txt", "cd docs") or search actions and folders.
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+
+export component CommandPalette inherits Rectangle {
+    // Give keyboard focus back to the file list.
+    callback closed();
+    background: #00000033;
+
+    function close() {
+        Bridge.palette-close();
+        root.closed();
+    }
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    card := Rectangle {
+        width: min(680px, parent.width - 60px);
+        height: col.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: 64px;
+        border-radius: 14px;
+        background: Theme.menu-bg;
+        border-width: 1px;
+        border-color: Theme.menu-border;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #00000066;
+        drop-shadow-offset-y: 6px;
+        clip: true;
+        TouchArea { }
+
+        col := VerticalLayout {
+            keys := FocusScope {
+                height: 54px;
+                // Arrows / Esc / Tab are handled before the text box sees them.
+                capture-key-pressed(e) => {
+                    if e.text == Key.Escape {
+                        root.close();
+                        return accept;
+                    }
+                    if e.text == Key.DownArrow {
+                        Bridge.palette-index = Math.min(Bridge.palette-items.length - 1, Bridge.palette-index + 1);
+                        return accept;
+                    }
+                    if e.text == Key.UpArrow {
+                        Bridge.palette-index = Math.max(0, Bridge.palette-index - 1);
+                        return accept;
+                    }
+                    // Ctrl+Shift+C: copy a command's output.
+                    if e.modifiers.control && e.modifiers.shift && (e.text == "c" || e.text == "C") && Bridge.palette-output != "" {
+                        Bridge.palette-copy-output();
+                        return accept;
+                    }
+                    reject
+                }
+                // Nothing else leaks to the file list behind.
+                key-pressed(e) => { accept }
+
+                HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 18px;
+                    spacing: 12px;
+                    Image {
+                        width: 18px;
+                        source: Icons.glyph("terminal");
+                        colorize: Theme.accent;
+                        image-fit: contain;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        Text {
+                            width: parent.width;
+                            height: parent.height;
+                            visible: input.text == "";
+                            text: "Type a command (mkdir a, b · !ipconfig · 2+3) or search actions and folders";
+                            vertical-alignment: center;
+                            overflow: elide;
+                            font-size: 15px;
+                            color: Theme.text-tertiary;
+                        }
+                        input := TextInput {
+                            width: parent.width;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            single-line: true;
+                            font-size: 16px;
+                            color: Theme.text;
+                            selection-background-color: Theme.focus-ring;
+                            text <=> Bridge.palette-text;
+                            edited => { Bridge.palette-changed(self.text); }
+                            accepted => { Bridge.palette-run(Bridge.palette-index); }
+                            init => {
+                                self.focus();
+                                self.set-selection-offsets(999999, 999999);
+                            }
+                            // Rust filled the box (Ctrl+G, examples): cursor to the end.
+                            property <int> fill: Bridge.palette-fill-serial;
+                            changed fill => {
+                                self.focus();
+                                self.set-selection-offsets(999999, 999999);
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Theme.menu-separator;
+            }
+            VerticalLayout {
+                padding: 6px;
+                for it[i] in Bridge.palette-items: Rectangle {
+                    property <bool> on: i == Bridge.palette-index;
+                    height: 40px;
+                    border-radius: 8px;
+                    background: self.on ? Theme.accent : row-ta.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        Image {
+                            width: 15px;
+                            source: Icons.glyph(it.icon);
+                            colorize: (i == Bridge.palette-index) ? #ffffff : Theme.text-secondary;
+                            image-fit: contain;
+                        }
+                        Text {
+                            text: it.title;
+                            vertical-alignment: center;
+                            font-weight: 500;
+                            overflow: elide;
+                            max-width: 360px;
+                            color: (i == Bridge.palette-index) ? #ffffff : Theme.text;
+                        }
+                        Text {
+                            horizontal-stretch: 1;
+                            text: it.detail;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            font-size: Theme.font-small;
+                            color: (i == Bridge.palette-index) ? #ffffffcc : Theme.text-secondary;
+                        }
+                        Text {
+                            text: it.shortcut;
+                            vertical-alignment: center;
+                            font-size: Theme.font-label;
+                            color: (i == Bridge.palette-index) ? #ffffffcc : Theme.text-tertiary;
+                        }
+                    }
+                    row-ta := TouchArea {
+                        clicked => { Bridge.palette-run(i); }
+                    }
+                }
+            }
+            // Output of a "!command".
+            if Bridge.palette-output != "" || Bridge.palette-running: Rectangle {
+                height: 1px;
+                background: Theme.menu-separator;
+            }
+            if Bridge.palette-output != "" || Bridge.palette-running: Rectangle {
+                height: 300px;
+                background: Theme.window;
+                out-flick := Flickable {
+                    x: 14px;
+                    y: 8px;
+                    width: parent.width - 28px;
+                    height: parent.height - 16px;
+                    content-width: max(self.width, out-text.preferred-width);
+                    content-height: max(self.height, out-text.preferred-height);
+                    // Follow new output while it arrives.
+                    property <length> grown: out-text.preferred-height;
+                    changed grown => {
+                        self.content-y = Math.min(0px, self.height - self.grown);
+                    }
+                    out-text := Text {
+                        x: 0px;
+                        y: 0px;
+                        text: Bridge.palette-output == "" ? "…" : Bridge.palette-output;
+                        font-family: Theme.mono-font;
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                    }
+                }
+                // Copy button, top right.
+                if Bridge.palette-output != "": Rectangle {
+                    x: parent.width - self.width - 12px;
+                    y: 8px;
+                    width: copy-label.preferred-width + 20px;
+                    height: 24px;
+                    border-radius: 6px;
+                    background: copy-ta.pressed ? Theme.pressed : copy-ta.has-hover ? Theme.hover : Theme.field;
+                    copy-label := Text {
+                        text: "Copy";
+                        font-size: Theme.font-label;
+                        color: Theme.text;
+                    }
+                    copy-ta := TouchArea {
+                        clicked => { Bridge.palette-copy-output(); }
+                    }
+                }
+            }
+            Rectangle {
+                height: 30px;
+                background: Theme.toolbar;
+                Text {
+                    x: 18px;
+                    height: parent.height;
+                    text: Bridge.palette-output-status != ""
+                        ? Bridge.palette-output-status + "   ·   Ctrl+Shift+C copy   ·   Enter run again   ·   Esc close"
+                        : "↑↓ choose   ·   Enter run   ·   Esc close   ·   Ctrl+G jump to a folder";
+                    vertical-alignment: center;
+                    font-size: Theme.font-label;
+                    color: Theme.text-tertiary;
+                }
+            }
+        }
+    }
+}

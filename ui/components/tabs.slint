@@ -1,0 +1,100 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { IconButton } from "controls.slint";
+
+// Always visible: click + (or Ctrl+T) for a new tab, middle-click or × to
+// close, drop files on a tab to move/copy them into that tab's folder.
+export component TabBar inherits Rectangle {
+    callback tab-clicked();
+    height: 34px;
+    background: Theme.toolbar;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-bottom: 5px;
+        spacing: 4px;
+
+        for t[i] in Bridge.tabs: Rectangle {
+            property <bool> active: i == Bridge.active-tab;
+            horizontal-stretch: 1;
+            min-width: 80px;
+            border-radius: Theme.r-control;
+            background: tab-drop.has-drag ? Theme.focus-ring : self.active ? Theme.window : ta.has-hover ? Theme.hover : transparent;
+            drop-shadow-blur: self.active ? 3px : 0px;
+            drop-shadow-color: #00000022;
+            drop-shadow-offset-y: 1px;
+            animate background { duration: Theme.fast; easing: ease-out; }
+
+            tab-drop := DropArea {
+                can-drop(e) => {
+                    return Bridge.can-drop-tab(i, e.data) ? e.proposed-action : DragAction.none;
+                }
+                dropped(e) => {
+                    Bridge.drop-tab(i, e.data);
+                    return e.proposed-action;
+                }
+            }
+
+            ta := TouchArea {
+                clicked => {
+                    Bridge.tab-clicked(i);
+                    root.tab-clicked();
+                }
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.up && e.button == PointerEventButton.middle {
+                        Bridge.tab-closed(i);
+                    }
+                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
+                        Bridge.tab-context(i, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    }
+                }
+            }
+
+            Text {
+                x: 28px;
+                width: parent.width - 56px;
+                height: parent.height;
+                text: t.title;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+                font-size: Theme.font-small;
+                font-weight: active ? 600 : 400;
+                color: active ? Theme.text : Theme.text-secondary;
+            }
+
+            Rectangle {
+                x: parent.width - self.width - 6px;
+                y: (parent.height - self.height) / 2;
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                visible: ta.has-hover || close-ta.has-hover;
+                background: close-ta.has-hover ? Theme.pressed : transparent;
+                Image {
+                    x: 4px;
+                    y: 4px;
+                    width: 10px;
+                    height: 10px;
+                    source: Icons.glyph("close");
+                    colorize: Theme.text-secondary;
+                }
+                close-ta := TouchArea {
+                    clicked => { Bridge.tab-closed(i); }
+                }
+            }
+        }
+
+        IconButton {
+            glyph: "plus";
+            tip: "New tab (Ctrl+T)";
+            icon-size: 14px;
+            clicked => {
+                Bridge.new-tab();
+                root.tab-clicked();
+            }
+        }
+    }
+}

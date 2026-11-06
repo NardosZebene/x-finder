@@ -1,0 +1,112 @@
+import { SlimScroll } from "controls.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component Sidebar inherits Rectangle {
+    // Lets the window give keyboard focus back to the file list.
+    callback item-clicked();
+    background: Theme.sidebar;
+    width: Theme.sidebar-width;
+
+    side-scroll := ScrollView {
+      vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+      width: parent.width;
+      height: parent.height;
+      content-width: self.visible-width;
+      content-height: max(self.visible-height, items.preferred-height);
+      items := VerticalLayout {
+        width: parent.width;
+        padding: 10px;
+        padding-top: 12px;
+        spacing: 1px;
+        alignment: start;
+
+        for item[i] in Bridge.sidebar: Rectangle {
+            height: item.header ? 28px : Theme.sidebar-row;
+            border-radius: Theme.r-control;
+            background: item.header ? transparent
+                : place-drop.has-drag ? Theme.focus-ring
+                : i == Bridge.sidebar-current ? Theme.sidebar-selected
+                : ta.has-hover ? Theme.sidebar-hover : transparent;
+            animate background { duration: Theme.fast; easing: ease-out; }
+
+            if item.header: Text {
+                x: 8px;
+                y: parent.height - self.height - 4px;
+                text: item.label;
+                font-size: Theme.font-label;
+                font-weight: 600;
+                color: Theme.text-tertiary;
+            }
+
+            if !item.header && item.tag < 0: Image {
+                x: 8px;
+                y: (parent.height - self.height) / 2;
+                width: 16px;
+                height: 16px;
+                source: Icons.glyph(item.icon);
+                colorize: Theme.accent;
+            }
+            if item.tag >= 0: Rectangle {
+                x: 10px;
+                y: (parent.height - self.height) / 2;
+                width: 12px;
+                height: 12px;
+                border-radius: 6px;
+                background: Theme.tag-colors[item.tag];
+            }
+
+            if !item.header: Text {
+                x: 32px;
+                width: parent.width - 40px;
+                height: parent.height;
+                text: item.label;
+                vertical-alignment: center;
+                overflow: elide;
+                color: Theme.text;
+            }
+
+            DragArea {
+                enabled: item.favorite;
+                data: Bridge.fav-drag(i);
+                allow-move: true;
+                drag-image: Icons.glyph(item.icon);
+                ta := TouchArea {
+                    enabled: !item.header;
+                    clicked => {
+                        Bridge.sidebar-clicked(i);
+                        root.item-clicked();
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
+                            Bridge.place-context(i, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                        }
+                    }
+                }
+            }
+
+            // Drop files on a favourite or drive to move/copy them there.
+            place-drop := DropArea {
+                enabled: !item.header;
+                can-drop(e) => {
+                    return Bridge.can-drop-place(i, e.data) ? e.proposed-action : DragAction.none;
+                }
+                dropped(e) => {
+                    Bridge.drop-place(i, e.data);
+                    return e.proposed-action;
+                }
+            }
+        }
+    }
+    }
+    SlimScroll {
+        x: side-scroll.width - self.width - 1px;
+        y: 0px;
+        height: side-scroll.height;
+        content-y <=> side-scroll.content-y;
+        content-height: side-scroll.content-height;
+        visible-height: side-scroll.visible-height;
+    }
+}

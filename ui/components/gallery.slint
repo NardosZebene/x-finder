@@ -1,0 +1,117 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { FileRow } from "../types.slint";
+import { PreviewBody } from "preview.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+component StripTile inherits Rectangle {
+    in property <FileRow> file;
+    in property <bool> current;
+    in property <bool> focused;
+    callback pressed();
+    callback activated();
+
+    width: 76px;
+    height: 76px;
+    border-radius: 8px;
+    background: self.current ? Theme.selection-inactive : ta.has-hover ? Theme.hover : transparent;
+    border-width: self.current ? 2px : 0px;
+    border-color: root.focused ? Theme.accent : Theme.text-tertiary;
+
+    if root.file.has-thumb: Image {
+        x: 6px;
+        y: 6px;
+        width: parent.width - 12px;
+        height: parent.height - 12px;
+        source: root.file.thumb;
+        image-fit: contain;
+    }
+    if !root.file.has-thumb && (root.file.icon == "folder" || root.file.icon == "folderlink"): FolderIcon {
+        alias: root.file.icon == "folderlink";
+        peek: root.file.peek;
+        has-peek: root.file.has-peek;
+        x: 6px;
+        y: 6px;
+        // Same size as the pictures, so folder previews are drawn 1:1.
+        width: parent.width - 12px;
+        height: parent.height - 12px;
+        tint: root.file.tint;
+    }
+    if !root.file.has-thumb && root.file.icon != "folder" && root.file.icon != "folderlink": Image {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 44px;
+        height: 44px;
+        source: Icons.file(root.file.icon);
+    }
+
+    ta := TouchArea {
+        clicked => { root.pressed(); }
+        double-clicked => { root.activated(); }
+    }
+}
+
+// Like Finder's gallery view: a big preview of the current item with a strip
+// of thumbnails underneath. The strip holds a small window of items around
+// the cursor (Rust supplies it), so it stays cheap for 100k-file folders.
+export component GalleryView inherits Rectangle {
+    in property <bool> focused;
+    callback focus-requested();
+
+    background: Theme.surface;
+
+    public function scroll-to(row: int) { }
+    public function scroll-top() { }
+    public pure function page-rows() -> int {
+        return 10;
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        padding-bottom: 10px;
+        spacing: 10px;
+
+        PreviewBody {
+            vertical-stretch: 1;
+            min-height: 140px;
+            active: Bridge.view-mode == 3 && !Bridge.quicklook;
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+            Text {
+                text: Bridge.preview-info.name;
+                horizontal-alignment: center;
+                overflow: elide;
+                font-weight: 600;
+                color: Theme.text;
+            }
+            Text {
+                text: Bridge.preview-info.kind
+                    + (Bridge.preview-info.size == "--" ? "" : "  ·  " + Bridge.preview-info.size)
+                    + (Bridge.preview-info.modified == "" ? "" : "  ·  " + Bridge.preview-info.modified);
+                horizontal-alignment: center;
+                font-size: Theme.font-small;
+                color: Theme.text-secondary;
+            }
+        }
+
+        Rectangle {
+            height: 84px;
+            clip: true;
+            for item[i] in Bridge.strip: StripTile {
+                x: parent.width / 2 + (i - Bridge.strip-cursor - 0.5) * 84px + 4px;
+                y: 4px;
+                file: item.file;
+                current: i == Bridge.strip-cursor;
+                focused: root.focused;
+                pressed => {
+                    root.focus-requested();
+                    Bridge.row-pressed(item.index, false, false);
+                }
+                activated => { Bridge.row-activated(item.index); }
+            }
+        }
+    }
+}

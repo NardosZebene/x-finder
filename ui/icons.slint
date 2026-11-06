@@ -1,0 +1,99 @@
+// Icon lookup. File icons are full-color; glyphs are single-color line icons
+// that callers tint with `colorize`.
+
+export global Icons {
+    public pure function file(kind: string) -> image {
+        if kind == "folder" { return @image-url("icons/folder.svg"); }
+        if kind == "drive" { return @image-url("icons/drive.svg"); }
+        if kind == "image" { return @image-url("icons/image.svg"); }
+        if kind == "video" { return @image-url("icons/video.svg"); }
+        if kind == "audio" { return @image-url("icons/audio.svg"); }
+        if kind == "archive" { return @image-url("icons/archive.svg"); }
+        if kind == "code" { return @image-url("icons/code.svg"); }
+        if kind == "pdf" { return @image-url("icons/pdf.svg"); }
+        if kind == "office" { return @image-url("icons/office.svg"); }
+        if kind == "text" { return @image-url("icons/text.svg"); }
+        if kind == "app" { return @image-url("icons/app.svg"); }
+        return @image-url("icons/file.svg");
+    }
+
+    public pure function glyph(name: string) -> image {
+        if name == "home" { return @image-url("icons/g-home.svg"); }
+        if name == "desktop" { return @image-url("icons/g-desktop.svg"); }
+        if name == "documents" { return @image-url("icons/g-documents.svg"); }
+        if name == "downloads" { return @image-url("icons/g-downloads.svg"); }
+        if name == "pictures" { return @image-url("icons/g-pictures.svg"); }
+        if name == "music" { return @image-url("icons/g-music.svg"); }
+        if name == "videos" { return @image-url("icons/g-videos.svg"); }
+        if name == "computer" { return @image-url("icons/g-computer.svg"); }
+        if name == "drive" { return @image-url("icons/g-drive.svg"); }
+        if name == "back" { return @image-url("icons/g-back.svg"); }
+        if name == "forward" { return @image-url("icons/g-forward.svg"); }
+        if name == "up" { return @image-url("icons/g-up.svg"); }
+        if name == "close" { return @image-url("icons/g-close.svg"); }
+        if name == "plus" { return @image-url("icons/g-plus.svg"); }
+        if name == "search" { return @image-url("icons/g-search.svg"); }
+        if name == "eye" { return @image-url("icons/g-eye.svg"); }
+        if name == "play" { return @image-url("icons/g-play.svg"); }
+        if name == "pause" { return @image-url("icons/g-pause.svg"); }
+        if name == "rewind" { return @image-url("icons/g-rewind.svg"); }
+        if name == "ffwd" { return @image-url("icons/g-ffwd.svg"); }
+        if name == "volume" { return @image-url("icons/g-volume.svg"); }
+        if name == "mute" { return @image-url("icons/g-mute.svg"); }
+        if name == "help" { return @image-url("icons/g-help.svg"); }
+        if name == "sizes" { return @image-url("icons/g-sizes.svg"); }
+        if name == "layout" { return @image-url("icons/g-layout.svg"); }
+        if name == "refresh" { return @image-url("icons/g-refresh.svg"); }
+        if name == "sort-up" { return @image-url("icons/g-sort-up.svg"); }
+        if name == "sort-down" { return @image-url("icons/g-sort-down.svg"); }
+        if name == "crumb" { return @image-url("icons/g-crumb.svg"); }
+        if name == "list" { return @image-url("icons/g-list.svg"); }
+        if name == "grid" { return @image-url("icons/g-grid.svg"); }
+        if name == "columns" { return @image-url("icons/g-columns.svg"); }
+        if name == "gallery" { return @image-url("icons/g-gallery.svg"); }
+        if name == "panel" { return @image-url("icons/g-panel.svg"); }
+        if name == "small" { return @image-url("icons/g-small.svg"); }
+        if name == "large" { return @image-url("icons/g-large.svg"); }
+        if name == "open" { return @image-url("icons/g-open.svg"); }
+        if name == "openwith" { return @image-url("icons/g-openwith.svg"); }
+        if name == "tab" { return @image-url("icons/g-tab.svg"); }
+        if name == "trash" { return @image-url("icons/g-trash.svg"); }
+        if name == "info" { return @image-url("icons/g-info.svg"); }
+        if name == "rename" { return @image-url("icons/g-rename.svg"); }
+        if name == "zip" { return @image-url("icons/g-zip.svg"); }
+        if name == "duplicate" { return @image-url("icons/g-duplicate.svg"); }
+        if name == "shortcut" { return @image-url("icons/g-shortcut.svg"); }
+        if name == "send" { return @image-url("icons/g-send.svg"); }
+        if name == "cut" { return @image-url("icons/g-cut.svg"); }
+        if name == "copy" { return @image-url("icons/g-copy.svg"); }
+        if name == "paste" { return @image-url("icons/g-paste.svg"); }
+        if name == "path" { return @image-url("icons/g-path.svg"); }
+        if name == "sort" { return @image-url("icons/g-sort.svg"); }
+        if name == "folder" { return @image-url("icons/g-folder.svg"); }
+        if name == "newfolder" { return @image-url("icons/g-newfolder.svg"); }
+        if name == "terminal" { return @image-url("icons/g-terminal.svg"); }
+        if name == "vscode" { return @image-url("icons/g-code.svg"); }
+        if name == "more" { return @image-url("icons/g-more.svg"); }
+        if name == "sidebar" { return @image-url("icons/g-sidebar.svg"); }
+        if name == "settings" { return @image-url("icons/g-settings.svg"); }
+        if name == "check" { return @image-url("icons/g-check.svg"); }
+        if name == "pin" { return @image-url("icons/g-pin.svg"); }
+        if name == "unpin" { return @image-url("icons/g-unpin.svg"); }
+        if name == "eject" { return @image-url("icons/g-eject.svg"); }
+        if name == "tag" { return @image-url("icons/g-tag.svg"); }
+        if name == "quicklook" { return @image-url("icons/g-quicklook.svg"); }
+        if name == "recent" { return @image-url("icons/g-recent.svg"); }
+        if name == "undo" { return @image-url("icons/g-undo.svg"); }
+        if name == "alias" { return @image-url("icons/g-alias.svg"); }
+        return @image-url("icons/g-documents.svg");
+    }
+
+    // Apple-style drive pictures for the This PC page.
+    public pure function drive(kind: string) -> image {
+        if kind == "sysdrive" { return @image-url("icons/hd-system.svg"); }
+        if kind == "usbdrive" { return @image-url("icons/hd-usb.svg"); }
+        if kind == "netdrive" { return @image-url("icons/hd-network.svg"); }
+        if kind == "cddrive" { return @image-url("icons/hd-cd.svg"); }
+        return @image-url("icons/hd-internal.svg");
+    }
+}

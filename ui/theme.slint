@@ -1,0 +1,97 @@
+// Design tokens (plan §5). Every color, size and timing used by the UI comes
+// from here, with light and dark sets that follow the system color scheme.
+import { Palette } from "std-widgets.slint";
+import { Bridge } from "bridge.slint";
+
+export global Theme {
+    // 0 = follow Windows, 1 = light, 2 = dark (Settings > Appearance).
+    in-out property <int> appearance: 0;
+    // Folder icon look (Settings): 0 Finder, 1 Windows, 2 GNOME, 3 Ubuntu, 4 KDE, 5 Mint.
+    in-out property <int> folder-style: 0;
+    // Settings: stripe every other row in lists.
+    in-out property <bool> striped: true;
+    // Windows' own light/dark setting, kept up to date by Rust.
+    in-out property <bool> system-dark: Palette.color-scheme == ColorScheme.dark;
+    out property <bool> dark: appearance == 2 || (appearance == 0 && system-dark);
+    // 0 = comfortable, 1 = compact, 2 = ultra-compact
+    in-out property <int> density: 0;
+
+    // Colors
+    out property <color> window: dark ? #1e1e1e : #ffffff;
+    out property <color> sidebar: dark ? #252527 : #f1f0f3;
+    out property <color> sidebar-hover: dark ? #ffffff12 : #0000000a;
+    out property <color> sidebar-selected: dark ? #ffffff21 : #00000014;
+    out property <color> toolbar: dark ? #2a2a2c : #f7f7f8;
+    out property <color> surface: dark ? #1e1e1e : #ffffff;
+    out property <color> field: dark ? #ffffff14 : #0000000b;
+    out property <color> text: dark ? #f2f2f7 : #1d1d1f;
+    out property <color> text-secondary: dark ? #98989f : #6e6e73;
+    out property <color> text-tertiary: dark ? #6c6c70 : #a1a1a6;
+    out property <color> accent: dark ? #0a84ff : #007aff;
+    out property <color> focus-ring: dark ? #0a84ff99 : #007aff80;
+    out property <color> selection: dark ? #0a5fd1 : #0064e1;
+    out property <color> selection-inactive: dark ? #ffffff26 : #dcdce0;
+    out property <color> selection-text: #ffffff;
+    out property <color> selection-text-secondary: #ffffffcc;
+    out property <color> row-alt: !striped ? transparent : dark ? #ffffff08 : #f4f5f5;
+    out property <color> hover: dark ? #ffffff0d : #00000008;
+    out property <color> pressed: dark ? #ffffff1f : #00000014;
+    out property <color> border: dark ? #ffffff1a : #00000017;
+    out property <color> danger: dark ? #ff453a : #ff3b30;
+    out property <color> menu-bg: dark ? #2b2b2e : #f8f8fa;
+    out property <color> menu-border: dark ? #ffffff1f : #00000021;
+    out property <color> menu-separator: dark ? #ffffff1a : #0000001a;
+    out property <[color]> tag-colors: [#ff453a, #ff9f0a, #ffd60a, #30d158, #0a84ff, #bf5af2, #8e8e93];
+
+    // Spacing grid
+    out property <length> s1: 4px;
+    out property <length> s2: 8px;
+    out property <length> s3: 12px;
+    out property <length> s4: 16px;
+    out property <length> s5: 24px;
+
+    // Radii
+    out property <length> r-control: 6px;
+    out property <length> r-tile: 10px;
+    out property <length> r-panel: 12px;
+
+    // Type
+    out property <string> font-family: "Segoe UI";
+    out property <length> font-base: 13px;
+    out property <length> font-small: 12px;
+    out property <length> font-label: 11px;
+
+    // Sizes
+    out property <length> sidebar-width: 210px;
+    out property <length> sidebar-row: 30px;
+    out property <length> toolbar-height: 52px;
+    out property <length> row-height: density == 0 ? 26px : density == 1 ? 22px : 19px;
+    out property <length> row-font: density == 2 ? 12px : 13px;
+    out property <length> row-icon: density == 0 ? 16px : 14px;
+
+    // List columns: widths live in Bridge (user-resizable); each fixed column
+    // is preceded by a gap that doubles as its resize handle.
+    out property <length> col-gap: 14px;
+    out property <length> list-inset: 6px;
+    out property <length> list-padding: 16px;
+
+    // Icon view: size follows the status bar slider (32-256 px)
+    out property <length> tile-icon: Bridge.icon-size * 1px;
+    out property <length> tile-width: max(tile-icon + 36px, 92px);
+    out property <length> tile-height: tile-icon + 54px;
+    out property <string> mono-font: "Consolas";
+    // Code colours (Xcode-like), indexed by highlight kind: plain, keyword,
+    // string, comment, number, type, function, tag, attribute, constant.
+    out property <[color]> syntax: dark
+        ? [#e6e6eb, #ff7ab2, #fc6a5d, #7f8c98, #d0bf69, #dabaff, #67b7a4, #5dd8ff, #fd8f3f, #a3a8ff]
+        : [#1d1d1f, #ad3da4, #c41a16, #5d6c79, #1c00cf, #703daa, #326d74, #0b4f79, #815f03, #3e3bc7];
+
+    // Column view
+    out property <length> pane-width: Bridge.pane-width;
+    out property <length> preview-width: 280px;
+    out property <length> pane-row: density == 0 ? 24px : density == 1 ? 21px : 19px;
+
+    // Motion
+    out property <duration> fast: 120ms;
+    out property <duration> normal: 180ms;
+}

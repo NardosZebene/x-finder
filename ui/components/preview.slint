@@ -1,0 +1,644 @@
+import { SlimScroll } from "controls.slint";
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { IconButton } from "controls.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+// Renders whatever Rust put in Bridge.pv-*: image, PDF page, text, rendered
+// document, table, or a large icon. Used by Quick Look, the preview pane,
+// gallery view and column view.
+export component PreviewBody inherits Rectangle {
+    // Quick Look uses larger text.
+    in property <bool> roomy;
+    // The preview currently on screen reports its size to Rust.
+    in property <bool> active;
+    property <length> text-size: root.roomy ? 14px : 12px;
+    clip: true;
+
+    property <length> box-w: root.width;
+    property <length> box-h: root.height;
+    function report() {
+        if root.active && root.width > 0px && root.height > 0px {
+            Bridge.preview-box(root.width, root.height - (Bridge.pv-kind == 5 ? 38px : 0px));
+        }
+    }
+    changed box-w => { root.report(); }
+    changed box-h => { root.report(); }
+    changed active => { root.report(); }
+    init => { root.report(); }
+
+    if Bridge.pv-loading: Text {
+        width: parent.width;
+        height: parent.height;
+        text: "Loading preview…";
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Theme.text-tertiary;
+    }
+
+    if !Bridge.pv-loading && Bridge.pv-kind == 0: Text {
+        width: parent.width;
+        height: parent.height;
+        text: "No selection";
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Theme.text-tertiary;
+    }
+
+    // Image, video frame, document thumbnail, or PDF page
+    if !Bridge.pv-loading && (Bridge.pv-kind == 1 || Bridge.pv-kind == 5): Image {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height - (Bridge.pv-kind == 5 ? 38px : 0px);
+        source: Bridge.pv-image;
+        image-fit: contain;
+    }
+
+    if !Bridge.pv-loading && Bridge.pv-kind == 5: HorizontalLayout {
+        y: parent.height - 34px;
+        height: 30px;
+        alignment: center;
+        spacing: 6px;
+        IconButton {
+            glyph: "back";
+            enabled: Bridge.pv-page > 1;
+            clicked => { Bridge.pv-page-step(-1); }
+        }
+        Text {
+            text: "Page " + Bridge.pv-page + " of " + Bridge.pv-pages;
+            vertical-alignment: center;
+            font-size: Theme.font-small;
+            color: Theme.text-secondary;
+        }
+        IconButton {
+            glyph: "forward";
+            enabled: Bridge.pv-page < Bridge.pv-pages;
+            clicked => { Bridge.pv-page-step(1); }
+        }
+    }
+
+    // Text / code, line by line (virtualized, so large logs stay fast)
+    if !Bridge.pv-loading && Bridge.pv-kind == 2: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        lines-list := ListView {
+            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+            property <int> page-serial: Bridge.pv-scroll-serial;
+            changed page-serial => {
+                self.content-y = max(min(0px, self.visible-height - self.content-height),
+                    min(0px, self.content-y - Bridge.pv-scroll-dir * (self.visible-height - 40px)));
+            }
+            width: parent.width;
+            height: parent.height;
+            for line in Bridge.pv-lines: Rectangle {
+                height: max(line-text.preferred-height, root.text-size * 1.45);
+                line-text := Text {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    text: line;
+                    wrap: word-wrap;
+                    font-size: root.text-size;
+                    font-family: Bridge.pv-mono ? Theme.mono-font : Theme.font-family;
+                    color: Theme.text;
+                }
+            }
+        }
+    SlimScroll {
+        x: parent.width - self.width - 2px;
+        y: 0px;
+        height: parent.height;
+        content-y <=> lines-list.content-y;
+        content-height: lines-list.content-height;
+        visible-height: lines-list.visible-height;
+    }
+    }
+
+    // Code with syntax colours: line numbers, no wrapping (Shift+wheel or a
+    // touchpad scrolls sideways on long lines).
+    if !Bridge.pv-loading && Bridge.pv-kind == 7: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        code-list := ListView {
+            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+            property <int> page-serial: Bridge.pv-scroll-serial;
+            changed page-serial => {
+                self.content-y = max(min(0px, self.visible-height - self.content-height),
+                    min(0px, self.content-y - Bridge.pv-scroll-dir * (self.visible-height - 40px)));
+            }
+            property <length> char-w: root.text-size * 0.55;
+            property <length> gutter: Bridge.pv-code-digits * self.char-w + 26px;
+            width: parent.width;
+            height: parent.height;
+            content-width: max(self.visible-width, self.gutter + Bridge.pv-code-cols * self.char-w + 28px);
+            for ln in Bridge.pv-code: Rectangle {
+                height: root.text-size * 1.55;
+                Text {
+                    x: 0px;
+                    width: code-list.gutter - 12px;
+                    height: parent.height;
+                    text: ln.num;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                    font-family: Theme.mono-font;
+                    font-size: root.text-size - 1px;
+                    color: Theme.text-tertiary;
+                }
+                HorizontalLayout {
+                    x: code-list.gutter;
+                    height: parent.height;
+                    alignment: start;
+                    for sp in ln.spans: Text {
+                        text: sp.text;
+                        vertical-alignment: center;
+                        font-family: Theme.mono-font;
+                        font-size: root.text-size;
+                        color: Theme.syntax[sp.kind];
+                        font-italic: sp.kind == 3;
+                    }
+                }
+            }
+        }
+        // Gutter divider
+        Rectangle {
+            x: code-list.gutter - 6px + code-list.content-x;
+            width: 1px;
+            background: Theme.border;
+            visible: self.x > 0px;
+        }
+        SlimScroll {
+            x: parent.width - self.width - 2px;
+            y: 0px;
+            height: parent.height;
+            content-y <=> code-list.content-y;
+            content-height: code-list.content-height;
+            visible-height: code-list.visible-height;
+        }
+    }
+
+    // Markdown / Word / PowerPoint, rendered as blocks
+    if !Bridge.pv-loading && Bridge.pv-kind == 3: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        blocks-list := ListView {
+            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+            property <int> page-serial: Bridge.pv-scroll-serial;
+            changed page-serial => {
+                self.content-y = max(min(0px, self.visible-height - self.content-height),
+                    min(0px, self.content-y - Bridge.pv-scroll-dir * (self.visible-height - 40px)));
+            }
+            width: parent.width;
+            height: parent.height;
+            for blk in Bridge.pv-blocks: Rectangle {
+                property <length> top: blk.kind == 1 ? 14px : blk.kind == 2 ? 12px : blk.kind == 3 ? 8px : blk.kind == 4 ? 1px : 5px;
+                height: blk.kind == 7 ? 17px : block-text.preferred-height + self.top + (blk.kind == 5 ? 16px : 4px);
+
+                if blk.kind == 7: Rectangle {
+                    x: 14px;
+                    y: 8px;
+                    width: parent.width - 28px;
+                    height: 1px;
+                    background: Theme.border;
+                }
+                if blk.kind == 5: Rectangle {
+                    x: 12px;
+                    y: parent.top;
+                    width: parent.width - 24px;
+                    height: parent.height - parent.top - 2px;
+                    border-radius: 6px;
+                    background: Theme.field;
+                }
+                if blk.kind == 6: Rectangle {
+                    x: 14px;
+                    y: parent.top;
+                    width: 3px;
+                    height: block-text.preferred-height;
+                    border-radius: 1.5px;
+                    background: Theme.accent;
+                }
+                block-text := Text {
+                    x: blk.kind == 5 ? 22px : blk.kind == 6 ? 26px : blk.kind == 4 ? 22px : 14px;
+                    y: parent.top + (blk.kind == 5 ? 8px : 0px);
+                    width: parent.width - self.x - 14px;
+                    visible: blk.kind != 7;
+                    text: blk.text;
+                    wrap: blk.kind == 5 ? no-wrap : word-wrap;
+                    overflow: elide;
+                    font-family: blk.kind == 5 ? Theme.mono-font : Theme.font-family;
+                    font-size: blk.kind == 1 ? root.text-size + 10px
+                        : blk.kind == 2 ? root.text-size + 6px
+                        : blk.kind == 3 ? root.text-size + 3px
+                        : root.text-size + 1px;
+                    font-weight: blk.kind >= 1 && blk.kind <= 3 ? 650 : 400;
+                    font-italic: blk.kind == 6;
+                    color: blk.kind == 6 ? Theme.text-secondary : Theme.text;
+                }
+            }
+        }
+    SlimScroll {
+        x: parent.width - self.width - 2px;
+        y: 0px;
+        height: parent.height;
+        content-y <=> blocks-list.content-y;
+        content-height: blocks-list.content-height;
+        visible-height: blocks-list.visible-height;
+    }
+    }
+
+    // Spreadsheet / CSV
+    if !Bridge.pv-loading && Bridge.pv-kind == 4: VerticalLayout {
+        if Bridge.pv-title != "": Text {
+            height: 26px;
+            text: "  " + Bridge.pv-title;
+            vertical-alignment: center;
+            font-size: Theme.font-small;
+            font-weight: 600;
+            color: Theme.text-secondary;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            table-list := ListView {
+                width: parent.width;
+                height: parent.height;
+                vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                property <int> page-serial: Bridge.pv-scroll-serial;
+                changed page-serial => {
+                    self.content-y = max(min(0px, self.visible-height - self.content-height),
+                        min(0px, self.content-y - Bridge.pv-scroll-dir * (self.visible-height - 40px)));
+                }
+                for tr[ri] in Bridge.pv-table: Rectangle {
+                    height: 24px;
+                    background: ri == 0 ? Theme.field : Math.mod(ri, 2) == 1 ? Theme.row-alt : transparent;
+                    HorizontalLayout {
+                        alignment: start;
+                        Text {
+                            width: 40px;
+                            text: ri + 1;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                            font-size: Theme.font-label;
+                            color: Theme.text-tertiary;
+                        }
+                        Rectangle { width: 8px; }
+                        for cell in tr.cells: Rectangle {
+                            width: 120px;
+                            Text {
+                                x: 6px;
+                                width: parent.width - 12px;
+                                height: parent.height;
+                                text: cell;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                font-size: Theme.font-small;
+                                font-weight: ri == 0 ? 600 : 400;
+                                color: Theme.text;
+                            }
+                            Rectangle {
+                                x: parent.width - 1px;
+                                width: 1px;
+                                background: Theme.border;
+                            }
+                        }
+                    }
+                }
+            }
+    SlimScroll {
+        x: parent.width - self.width - 1px;
+        y: 0px;
+        height: parent.height;
+        content-y <=> table-list.content-y;
+        content-height: table-list.content-height;
+        visible-height: table-list.visible-height;
+    }
+        }
+    }
+
+    // No visual preview: large icon and a note
+    if !Bridge.pv-loading && Bridge.pv-kind == 6: VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+        HorizontalLayout {
+            alignment: center;
+            if Bridge.preview-info.icon == "folder": FolderIcon {
+                width: min(128px, root.width * 0.5);
+                height: self.width;
+            }
+            if Bridge.preview-info.icon != "folder": Image {
+                width: min(128px, root.width * 0.5);
+                height: self.width;
+                source: Icons.file(Bridge.preview-info.icon);
+            }
+        }
+        Text {
+            text: Bridge.pv-note;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+            font-size: Theme.font-small;
+            color: Theme.text-tertiary;
+        }
+    }
+
+    if !Bridge.pv-loading && Bridge.pv-truncated && ((Bridge.pv-kind >= 2 && Bridge.pv-kind <= 4) || Bridge.pv-kind == 7): Rectangle {
+        x: parent.width - self.width - 10px;
+        y: parent.height - self.height - 8px;
+        width: trunc-text.preferred-width + 16px;
+        height: 22px;
+        border-radius: 11px;
+        background: Theme.toolbar;
+        drop-shadow-blur: 4px;
+        drop-shadow-color: #00000030;
+        trunc-text := Text {
+            text: "Preview shows the beginning only";
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+        }
+    }
+}
+
+component InfoLine inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 8px;
+    Text {
+        width: 64px;
+        text: root.label;
+        horizontal-alignment: right;
+        font-size: Theme.font-small;
+        color: Theme.text-tertiary;
+    }
+    Text {
+        horizontal-stretch: 1;
+        text: root.value;
+        font-size: Theme.font-small;
+        color: Theme.text-secondary;
+        overflow: elide;
+    }
+}
+
+// Name, kind, size and dates of the item under the cursor.
+export component InfoBlock inherits VerticalLayout {
+    spacing: 4px;
+    vertical-stretch: 0;
+    alignment: start;
+    Text {
+        text: Bridge.preview-info.name;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+        font-weight: 600;
+        color: Theme.text;
+    }
+    Text {
+        text: Bridge.preview-info.kind + (Bridge.preview-info.size == "--" ? "" : " — " + Bridge.preview-info.size);
+        horizontal-alignment: center;
+        font-size: Theme.font-small;
+        color: Theme.text-secondary;
+    }
+    Rectangle {
+        height: 13px;
+        Rectangle {
+            y: 6px;
+            height: 1px;
+            background: Theme.border;
+        }
+    }
+    InfoLine {
+        label: "Created";
+        value: Bridge.preview-info.created;
+    }
+    InfoLine {
+        label: "Modified";
+        value: Bridge.preview-info.modified;
+    }
+}
+
+// Right-hand preview pane for list and icon views (Ctrl+P).
+export component PreviewPane inherits Rectangle {
+    background: Theme.surface;
+    VerticalLayout {
+        padding: 12px;
+        spacing: 12px;
+        PreviewBody {
+            vertical-stretch: 1;
+            min-height: 120px;
+            active: Bridge.preview-pane && Bridge.view-mode <= 1 && !Bridge.quicklook;
+        }
+        if Bridge.pv-kind != 0: InfoBlock { }
+    }
+}
+
+// Space-bar preview over the whole window, like macOS Quick Look.
+// Arrow keys keep moving through the files underneath.
+export component QuickLook inherits Rectangle {
+    background: #00000080;
+
+    TouchArea {
+        clicked => { Bridge.toggle-quicklook(); }
+    }
+
+    Rectangle {
+        width: min(parent.width - 48px, max(parent.width * 0.8, 600px));
+        height: parent.height - 56px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.r-panel;
+        background: Theme.window;
+        drop-shadow-blur: 32px;
+        drop-shadow-color: #00000070;
+        clip: true;
+
+        // Swallow clicks so they don't close the panel.
+        TouchArea { }
+
+        VerticalLayout {
+            Rectangle {
+                height: 44px;
+                background: Theme.toolbar;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 10px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 8px;
+                    // Balances the buttons on the right so the name stays centred.
+                    Rectangle { width: open-btn.width + 38px; }
+                    Text {
+                        horizontal-stretch: 1;
+                        text: Bridge.preview-info.name;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        font-weight: 600;
+                        color: Theme.text;
+                    }
+                    open-btn := Rectangle {
+                        width: open-label.preferred-width + 24px;
+                        border-radius: Theme.r-control;
+                        background: open-ta.pressed ? Theme.selection : Theme.accent;
+                        open-label := Text {
+                            text: "Open";
+                            color: #ffffff;
+                            font-weight: 600;
+                            font-size: Theme.font-small;
+                        }
+                        open-ta := TouchArea {
+                            clicked => { Bridge.open-current(); }
+                        }
+                    }
+                    IconButton {
+                        glyph: "close";
+                        tip: "Close (Space or Esc)";
+                        clicked => { Bridge.toggle-quicklook(); }
+                    }
+                }
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    background: Theme.border;
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                // Video: Windows draws the picture over this black box.
+                if Bridge.media != 1: PreviewBody {
+                    x: 16px;
+                    y: 12px;
+                    width: parent.width - 32px;
+                    height: parent.height - 24px;
+                    roomy: true;
+                    active: true;
+                }
+                if Bridge.media == 1: video-box := Rectangle {
+                    background: #000000;
+                    property <length> ax: self.absolute-position.x;
+                    property <length> ay: self.absolute-position.y;
+                    function report() {
+                        Bridge.media-rect(self.absolute-position.x, self.absolute-position.y, self.width, self.height);
+                    }
+                    init => { self.report(); }
+                    changed ax => { self.report(); }
+                    changed ay => { self.report(); }
+                    changed width => { self.report(); }
+                    changed height => { self.report(); }
+                    // Clicks pass through the video window: play/pause.
+                    TouchArea {
+                        clicked => { Bridge.media-toggle(); }
+                    }
+                }
+                if Bridge.media-note != "": Rectangle {
+                    width: min(parent.width - 40px, note-text.preferred-width + 28px);
+                    height: note-text.height + 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - self.height - 14px;
+                    border-radius: 12px;
+                    background: #000000bb;
+                    note-text := Text {
+                        x: 14px;
+                        width: parent.width - 28px;
+                        height: self.preferred-height;
+                        y: 7px;
+                        text: Bridge.media-note;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                        font-size: Theme.font-small;
+                        color: #ffffff;
+                    }
+                }
+            }
+            // Player controls for audio and video.
+            if Bridge.media != 0: Rectangle {
+                height: 46px;
+                background: Theme.toolbar;
+                Rectangle {
+                    height: 1px;
+                    y: 0px;
+                    background: Theme.border;
+                }
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 14px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
+                    spacing: 12px;
+                    HorizontalLayout {
+                        spacing: 2px;
+                        IconButton {
+                            glyph: "rewind";
+                            tip: "Back 10 seconds (←)";
+                            clicked => { Bridge.media-skip(-10); }
+                        }
+                        IconButton {
+                            glyph: Bridge.media-playing ? "pause" : "play";
+                            tip: Bridge.media-playing ? "Pause" : "Play";
+                            clicked => { Bridge.media-toggle(); }
+                        }
+                        IconButton {
+                            glyph: "ffwd";
+                            tip: "Forward 10 seconds (→)";
+                            clicked => { Bridge.media-skip(10); }
+                        }
+                    }
+                    // Seek bar: click or drag.
+                    seek := Rectangle {
+                        horizontal-stretch: 1;
+                        property <float> shown: seek-ta.pressed ? max(0, min(1, seek-ta.mouse-x / self.width)) : Bridge.media-pos;
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            height: seek-ta.has-hover || seek-ta.pressed ? 6px : 4px;
+                            border-radius: self.height / 2;
+                            background: Theme.field;
+                            Rectangle {
+                                x: 0px;
+                                width: parent.width * seek.shown;
+                                border-radius: parent.border-radius;
+                                background: Theme.accent;
+                            }
+                        }
+                        Rectangle {
+                            x: parent.width * seek.shown - self.width / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: 12px;
+                            height: 12px;
+                            border-radius: 6px;
+                            background: #ffffff;
+                            drop-shadow-blur: 3px;
+                            drop-shadow-color: #00000066;
+                            visible: seek-ta.has-hover || seek-ta.pressed;
+                        }
+                        seek-ta := TouchArea {
+                            pointer-event(e) => {
+                                if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                                    Bridge.media-seek(max(0, min(1, self.mouse-x / parent.width)));
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        text: Bridge.media-time;
+                        vertical-alignment: center;
+                        font-size: Theme.font-label;
+                        color: Theme.text-secondary;
+                    }
+                    IconButton {
+                        glyph: Bridge.media-muted ? "mute" : "volume";
+                        tip: Bridge.media-muted ? "Unmute" : "Mute";
+                        clicked => { Bridge.media-mute(); }
+                    }
+                }
+            }
+            Rectangle {
+                height: 28px;
+                background: Theme.toolbar;
+                Text {
+                    text: Bridge.preview-info.kind
+                        + (Bridge.preview-info.size == "--" ? "" : "  ·  " + Bridge.preview-info.size)
+                        + "  ·  Modified " + Bridge.preview-info.modified;
+                    font-size: Theme.font-label;
+                    color: Theme.text-secondary;
+                }
+            }
+        }
+    }
+}

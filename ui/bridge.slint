@@ -1,0 +1,303 @@
+// The only connection between UI and Rust. The UI reads state from these
+// properties and reports user intent through the callbacks; it never touches
+// the disk itself (plan §4).
+import { PaletteItem, CodeLine, FileRow, Crumb, SidebarItem, TabItem, SlotData, PaneData, PreviewInfo, DocBlock, TableRow, StripItem, MenuEntry, PcCard } from "types.slint";
+
+export global Bridge {
+    // Current folder
+    in property <[FileRow]> files;
+    in property <[Crumb]> crumbs;
+    in property <string> path-text;
+    in property <string> window-title: "Files";
+    in property <bool> can-back;
+    in property <bool> can-forward;
+    in property <bool> can-up;
+    in property <bool> loading;
+    in property <string> error-text;
+    in property <string> empty-text;
+
+    // Chrome
+    in property <[SidebarItem]> sidebar;
+    in property <int> sidebar-current: -1;
+    in property <[TabItem]> tabs;
+    in property <int> active-tab;
+    in property <string> status-left;
+    // Bumped on every status change: the status text item is rebuilt so the
+    // software renderer can never keep showing a stale copy.
+    in property <int> status-serial;
+    in property <string> status-right;
+    // Important one-off message shown over the list (see App::toast).
+    in-out property <string> toast;
+    in-out property <int> toast-serial;
+    // Button on the toast ("Undo"), empty for none.
+    in-out property <string> toast-action;
+    callback toast-action-clicked();
+    // "Make X Finder your default file explorer?" banner.
+    in property <bool> explorer-banner;
+    // 0 make default, 1 not now, 2 don't ask again.
+    callback explorer-banner-pick(choice: int);
+    // Narrow windows: the toolbar's "⋯" menu (Split layout, Preview…).
+    callback toolbar-more(x: length, y: length);
+
+    // View: 0 = list, 1 = icons, 2 = columns, 3 = gallery
+    in property <int> view-mode;
+    // Icon/gallery size in logical pixels (status bar slider, Ctrl+Plus/Minus).
+    in-out property <float> icon-size: 64;
+    callback icon-size-changed(size: float);
+
+    // Preview of the item under the cursor, shared by Quick Look (Space),
+    // the preview pane, gallery view and column view.
+    in property <bool> quicklook;
+    in property <bool> preview-pane;
+    // 0 nothing selected, 1 image, 2 text lines, 3 document blocks, 4 table,
+    // 5 PDF page, 6 large icon + note, 7 highlighted code
+    in property <int> pv-kind;
+    in property <bool> pv-loading;
+    in property <image> pv-image;
+    in property <[string]> pv-lines;
+    // Kind 7: highlighted code, its longest line (characters) and the
+    // number of digits in the last line number.
+    in property <[CodeLine]> pv-code;
+    in property <int> pv-code-cols;
+    in property <int> pv-code-digits;
+    in property <bool> pv-mono;
+    in property <[DocBlock]> pv-blocks;
+    in property <[TableRow]> pv-table;
+    in property <string> pv-title;
+    in property <string> pv-note;
+    in property <int> pv-page;
+    in property <int> pv-pages;
+    in property <bool> pv-truncated;
+    callback pv-page-step(delta: int);
+    // Left/Right in Quick Look scroll documents by a screen.
+    in-out property <int> pv-scroll-serial;
+    in-out property <int> pv-scroll-dir;
+    callback toggle-quicklook();
+    // Quick Look playback: 0 none, 1 video (drawn by Windows over the area
+    // reported through media-rect), 2 audio.
+    in property <int> media;
+    in property <bool> media-playing;
+    in property <bool> media-muted;
+    // 0..1 of the duration, and "0:12 / 3:45".
+    in property <float> media-pos;
+    in property <string> media-time;
+    // Why a file can't be played (shown over its thumbnail).
+    in property <string> media-note;
+    callback media-toggle();
+    callback media-seek(fraction: float);
+    // Bumped to force a full redraw (see main.slint).
+    in-out property <int> repaint-serial;
+    // Empty results: offer a button that searches more widely.
+    in property <bool> can-search-deeper;
+    // Jump by this many seconds (negative: back).
+    callback media-skip(seconds: int);
+    callback media-mute();
+    callback media-rect(x: length, y: length, width: length, height: length);
+    callback toggle-preview-pane();
+    callback open-current();
+
+    // Gallery view strip: a window of items around the cursor.
+    in property <[StripItem]> strip;
+    in property <int> strip-cursor;
+
+    // Column view: parent folders, then the current folder (`files`), then a preview.
+    in property <[PaneData]> panes;
+    // 0 = nothing, 1 = folder contents (`preview-files`), 2 = file info card
+    in property <int> preview-mode;
+    in property <[FileRow]> preview-files;
+    in property <PreviewInfo> preview-info;
+    // Column view starts at "This PC" (true) or at the folder you opened (false).
+    in-out property <bool> columns-absolute: false;
+    callback columns-setting-changed();
+
+    // List view columns (resizable, can be hidden from the header's context menu)
+    in-out property <length> col-date-w: 170px;
+    in-out property <length> col-created-w: 170px;
+    in-out property <length> col-size-w: 80px;
+    in-out property <length> col-kind-w: 150px;
+    in-out property <length> col-share-w: 110px;
+    in-out property <bool> show-date: true;
+    in-out property <bool> show-created: false;
+    in-out property <bool> show-size: true;
+    in-out property <bool> show-kind: true;
+
+    // View options
+    in property <int> sort-column;
+    in property <bool> sort-ascending: true;
+    in property <bool> show-hidden;
+    in-out property <string> filter-text;
+
+    // Selection facts for the file menu.
+    in property <bool> sel-any;
+    in property <bool> sel-one;
+    in property <bool> sel-dir;
+    in property <bool> in-folder;
+    // Right-click on an item: Rust selects it, then opens the file menu at (x, y).
+    callback row-context(row: int, x: length, y: length);
+    // Column view items; pane -1 is the current folder, -2 the preview column.
+    callback pane-context(pane: int, row: int, x: length, y: length);
+    callback menu-action(id: string);
+
+    // The app's own context menu (drawn by AppMenu).
+    in property <bool> menu-open;
+    in property <length> menu-x;
+    in property <length> menu-y;
+    in property <[MenuEntry]> menu-items;
+    in property <[MenuEntry]> sub-items;
+    in property <int> sub-index: -1;
+    callback menu-hover(index: int);
+    callback menu-pick(id: string);
+    callback menu-close();
+    // Right-clicks that open a menu.
+    callback background-context(x: length, y: length);
+    callback place-context(index: int, x: length, y: length);
+    callback header-context(x: length, y: length);
+    // Click on empty space: clear the selection.
+    callback background-click();
+
+    // Settings page
+    in property <bool> settings-open;
+    in property <int> set-appearance;
+    in property <int> set-folder-style;
+    in property <bool> set-folder-previews;
+    in property <bool> set-striped-rows;
+    in property <bool> set-show-recents;
+    in property <bool> set-show-trash;
+    in property <bool> set-restore-tabs;
+    in property <bool> set-default-explorer;
+    in property <bool> set-app-shortcuts;
+
+    // This PC page
+    in property <bool> at-computer;
+    in property <[PcCard]> pc-folders;
+    in property <[PcCard]> pc-drives;
+    callback pc-open(section: int, index: int);
+    callback pc-context(section: int, index: int, x: length, y: length);
+
+    // Enter in the filter box: search subfolders.
+    callback search-submit(text: string);
+    // Drag payload for reordering a sidebar favourite.
+    pure callback fav-drag(index: int) -> data-transfer;
+    in property <int> set-menu-style;
+    in property <int> set-icon-style;
+    in property <int> set-start-view;
+    callback settings-set(key: string, value: int);
+
+    // Size of the preview area currently on screen, so images and PDF pages
+    // are produced at exactly that size (sharp, no renderer scaling).
+    callback preview-box(width: length, height: length);
+
+    // Drag and drop. `drag-data` holds the selected files.
+    in property <data-transfer> drag-data;
+    callback can-drop-row(row: int, data: data-transfer) -> bool;
+    callback drop-row(row: int, data: data-transfer);
+    callback can-drop-pane(pane: int, row: int, data: data-transfer) -> bool;
+    callback drop-pane(pane: int, row: int, data: data-transfer);
+    callback can-drop-place(index: int, data: data-transfer) -> bool;
+    callback drop-place(index: int, data: data-transfer);
+    callback can-drop-tab(index: int, data: data-transfer) -> bool;
+    callback drop-tab(index: int, data: data-transfer);
+    callback can-drop-here(data: data-transfer) -> bool;
+    callback drop-here(data: data-transfer);
+
+    // Rename / new folder dialog
+    in property <bool> renaming;
+    in property <string> rename-title;
+    in property <string> rename-text;
+    // Byte length of the name without its extension (pre-selected).
+    in property <int> rename-stem;
+    in property <string> rename-error;
+    // Saving a tab group: also pick a Ctrl+Alt+1…9 shortcut (0 = none).
+    in property <bool> rename-group;
+    in-out property <int> rename-shortcut;
+    callback rename-commit(text: string);
+    callback rename-cancel();
+
+    // Resizable panels
+    in-out property <length> preview-pane-width: 300px;
+    in-out property <length> pane-width: 230px;
+
+    // Keyboard: returns true when handled.
+    callback key(text: string, ctrl: bool, alt: bool, shift: bool) -> bool;
+
+    callback row-pressed(row: int, ctrl: bool, shift: bool);
+    callback row-activated(row: int);
+    callback row-middle(row: int);
+    callback pane-clicked(pane: int, row: int);
+    callback pane-activated(pane: int, row: int);
+    callback preview-clicked(row: int);
+    callback preview-activated(row: int);
+    callback set-view(mode: int);
+    callback sort-by(column: int);
+    callback sidebar-clicked(index: int);
+    callback crumb-clicked(index: int);
+    callback tab-clicked(index: int);
+    callback tab-closed(index: int);
+    // Right-click on a tab: close / tab groups menu.
+    callback tab-context(index: int, x: length, y: length);
+    callback new-tab();
+
+    // Split layouts (see components/split.slint): 0 single, 1 side by side,
+    // 2 stacked, 3 one + two, 4 grid of four. Each pane shows a tab.
+    in property <int> layout;
+    in property <[SlotData]> slots;
+    in property <int> active-slot;
+    in-out property <bool> layout-picker-open;
+    in-out property <length> layout-picker-x;
+    in-out property <length> layout-picker-y;
+    callback set-layout(layout: int);
+    callback slot-focus(slot: int);
+    callback slot-pressed(slot: int, row: int, ctrl: bool, shift: bool);
+    callback slot-activated(slot: int, row: int);
+    callback slot-context(slot: int, row: int, x: length, y: length);
+    callback back();
+    callback forward();
+    callback up();
+    callback refresh();
+    callback toggle-hidden();
+
+    // Help guide (components/help.slint), F1.
+    in-out property <bool> help-open;
+
+    // Command palette (components/palette.slint).
+    in-out property <bool> palette-open;
+    in-out property <string> palette-text;
+    in property <[PaletteItem]> palette-items;
+    in-out property <int> palette-index;
+    // Bumped when Rust fills the box: the cursor jumps to the end.
+    in property <int> palette-fill-serial;
+    callback palette-show(prefill: string);
+    callback palette-changed(text: string);
+    callback palette-run(index: int);
+    callback palette-close();
+    // "!command" output shown under the list.
+    in property <string> palette-output;
+    in property <bool> palette-running;
+    in property <string> palette-output-status;
+    callback palette-copy-output();
+    // Folder sizes mode: folders show their size, rows a "% of folder" bar.
+    in property <bool> show-sizes;
+    callback toggle-sizes();
+    callback path-entered(text: string);
+    callback filter-changed(text: string);
+}
+
+// How much room there is. The window sets the widths; parts of the UI fold
+// away as it gets narrower and come back when it's widened (nothing in the
+// settings changes).
+export global Layout {
+    in-out property <length> window-width: 1100px;
+    // Rarely used toolbar buttons move into a "⋯" menu.
+    out property <bool> compact: window-width < 1000px;
+    // Sidebar behind a ☰ button, search as a magnifier, no preview pane.
+    out property <bool> narrow: window-width < 820px;
+    // The sidebar slid in over the list (narrow windows).
+    in-out property <bool> sidebar-open: false;
+    // List columns give way, one by one, so names keep their room.
+    in-out property <length> list-width: 800px;
+    out property <bool> col-created: Bridge.show-created && list-width >= 740px;
+    out property <bool> col-kind: Bridge.show-kind && list-width >= 600px;
+    out property <bool> col-share: Bridge.show-sizes && list-width >= 520px;
+    out property <bool> col-size: Bridge.show-size && list-width >= 390px;
+    out property <bool> col-date: Bridge.show-date && list-width >= 300px;
+}

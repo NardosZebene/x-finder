@@ -1,0 +1,434 @@
+﻿import { Palette } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Bridge, Layout } from "bridge.slint";
+import { FileRow, Crumb, SidebarItem, TabItem, PaneData, PreviewInfo, DocBlock, TableRow, StripItem, MenuEntry, PcCard, SlotData } from "types.slint";
+import { CodeLine, CodeSpan, PaletteItem } from "types.slint";
+import { CommandPalette } from "components/palette.slint";
+import { HelpDialog } from "components/help.slint";
+import { IconGrid } from "components/icon-grid.slint";
+import { ColumnView } from "components/column-view.slint";
+import { GalleryView } from "components/gallery.slint";
+import { PreviewPane, QuickLook } from "components/preview.slint";
+import { Sidebar } from "components/sidebar.slint";
+import { Toolbar } from "components/toolbar.slint";
+import { TabBar } from "components/tabs.slint";
+import { FileList } from "components/file-list.slint";
+import { StatusBar } from "components/statusbar.slint";
+import { RenameDialog } from "components/rename.slint";
+import { AppMenu } from "components/menu.slint";
+import { SettingsDialog } from "components/settings.slint";
+import { ComputerView } from "components/computer.slint";
+import { Splitter, Tip, TipBubble } from "components/controls.slint";
+import { Split, MiniPane, PaneHeader, LayoutPicker } from "components/split.slint";
+import { ExplorerBanner } from "components/banner.slint";
+
+export { PaletteItem, CodeLine, CodeSpan, Tip, Theme, Bridge, Layout, FileRow, Crumb, SidebarItem, TabItem, SlotData, PaneData, PreviewInfo, DocBlock, TableRow, StripItem, MenuEntry, PcCard }
+
+export component MainWindow inherits Window {
+    title: Bridge.window-title;
+    icon: @image-url("icons/app-icon.png");
+    preferred-width: 1100px;
+    preferred-height: 680px;
+    min-width: 520px;
+    min-height: 360px;
+    // Parts of the UI fold away on narrow windows (see Layout).
+    changed width => {
+        Layout.window-width = self.width;
+        if !Layout.narrow {
+            Layout.sidebar-open = false;
+        }
+    }
+    background: Theme.window;
+    default-font-family: Theme.font-family;
+    default-font-size: Theme.font-base;
+    forward-focus: fs;
+
+    public function scroll-to-row(row: int) {
+        if Bridge.view-mode == 1 {
+            grid.scroll-to(row);
+        } else if Bridge.view-mode == 2 {
+            columns.scroll-to(row);
+        } else {
+            files.scroll-to(row);
+        }
+    }
+
+    public function scroll-top() {
+        files.scroll-top();
+        grid.scroll-top();
+        columns.scroll-top();
+    }
+
+    // In icon view this counts rows of tiles; Rust multiplies by grid-cols().
+    public pure function page-rows() -> int {
+        return Bridge.view-mode == 1 ? grid.page-rows()
+            : Bridge.view-mode == 2 ? columns.page-rows()
+            : Bridge.view-mode == 3 ? gallery.page-rows()
+            : files.page-rows();
+    }
+
+    public pure function grid-cols() -> int {
+        return grid.cols;
+    }
+
+    public function focus-list() {
+        fs.focus();
+    }
+
+    // Built-in widgets (slider, scrollbars, text fields) follow the same
+    // light/dark choice as the rest of the app.
+    property <bool> is-dark: Theme.dark;
+    changed is-dark => {
+        root.apply-scheme();
+    }
+    init => {
+        root.apply-scheme();
+        Layout.window-width = self.width;
+    }
+    function apply-scheme() {
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+
+    fs := FocusScope {
+        key-pressed(e) => {
+            if Bridge.menu-open {
+                if e.text == Key.Escape {
+                    Bridge.menu-close();
+                }
+                return accept;
+            }
+            // Help open: Esc / F1 close it; nothing reaches the files behind.
+            if Bridge.help-open {
+                if e.text == Key.Escape || e.text == Key.F1 {
+                    Bridge.help-open = false;
+                }
+                return accept;
+            }
+            if Bridge.settings-open {
+                if e.text == Key.Escape {
+                    Bridge.settings-set("close", 0);
+                    return accept;
+                }
+                return reject;
+            }
+            if e.modifiers.control && e.text == "," {
+                Bridge.settings-set("open", 1);
+                return accept;
+            }
+            if Bridge.renaming {
+                if e.text == Key.Escape {
+                    Bridge.rename-cancel();
+                    fs.focus();
+                    return accept;
+                }
+                return reject;
+            }
+            if e.text == Key.Escape {
+                if toolbar.editing {
+                    toolbar.cancel-edit();
+                    fs.focus();
+                    return accept;
+                }
+                if toolbar.text-focused {
+                    fs.focus();
+                    return accept;
+                }
+            }
+            if e.modifiers.control && !e.modifiers.alt && (e.text == "l" || e.text == "L") {
+                toolbar.edit-path();
+                return accept;
+            }
+            if e.modifiers.control && !e.modifiers.alt && (e.text == "f" || e.text == "F") {
+                toolbar.focus-filter();
+                return accept;
+            }
+            // While typing in a text field, only shortcuts reach the file list.
+            if toolbar.text-focused {
+                if e.text == Key.DownArrow || e.text == Key.UpArrow {
+                    fs.focus();
+                } else if !e.modifiers.control && !e.modifiers.alt && e.text != Key.F5 {
+                    return reject;
+                }
+            }
+            if Bridge.key(e.text, e.modifiers.control, e.modifiers.alt, e.modifiers.shift) {
+                return accept;
+            }
+            return reject;
+        }
+
+            HorizontalLayout {
+                if !Layout.narrow: Sidebar {
+                    item-clicked => { fs.focus(); }
+                }
+                if !Layout.narrow: Rectangle {
+                    width: 1px;
+                    background: Theme.border;
+                }
+                VerticalLayout {
+                    toolbar := Toolbar {
+                        done => { fs.focus(); }
+                    }
+                    TabBar {
+                        tab-clicked => { fs.focus(); }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    if Bridge.explorer-banner: ExplorerBanner { }
+                    // Split layouts: the focused pane is the full view below,
+                    // placed in its slot; the other panes are light lists.
+                    content := Rectangle {
+                        vertical-stretch: 1;
+                        background: Theme.border;
+                        property <int> lay: Bridge.layout;
+                        property <int> act: Bridge.layout == 0 ? 0 : Bridge.active-slot;
+                        for slot[k] in Bridge.slots: MiniPane {
+                            visible: content.lay > 0 && !slot.active;
+                            x: Split.fx(content.lay, k) * content.width + (Split.fx(content.lay, k) > 0 ? 1px : 0px);
+                            y: Split.fy(content.lay, k) * content.height + (Split.fy(content.lay, k) > 0 ? 1px : 0px);
+                            width: Split.fw(content.lay, k) * content.width - (Split.fw(content.lay, k) < 1 ? 1px : 0px);
+                            height: Split.fh(content.lay, k) * content.height - (Split.fh(content.lay, k) < 1 ? 1px : 0px);
+                            slot: slot;
+                            slot-index: k;
+                            focus-requested => { fs.focus(); }
+                        }
+                        Rectangle {
+                            x: Split.fx(content.lay, content.act) * content.width + (Split.fx(content.lay, content.act) > 0 ? 1px : 0px);
+                            y: Split.fy(content.lay, content.act) * content.height + (Split.fy(content.lay, content.act) > 0 ? 1px : 0px);
+                            width: Split.fw(content.lay, content.act) * content.width - (Split.fw(content.lay, content.act) < 1 ? 1px : 0px);
+                            height: Split.fh(content.lay, content.act) * content.height - (Split.fh(content.lay, content.act) < 1 ? 1px : 0px);
+                            background: Theme.window;
+                            clip: true;
+                            VerticalLayout {
+                                if Bridge.layout > 0: PaneHeader {
+                                    title: Bridge.slots[Bridge.active-slot].title;
+                                    status: Bridge.slots[Bridge.active-slot].status;
+                                    active: true;
+                                }
+                            // All views stay alive (cheap: each only renders what is on
+                            // screen); switching just flips visibility.
+                            HorizontalLayout {
+                                vertical-stretch: 1;
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    min-width: 260px;
+                                    // Small split panes: never taller than their slot.
+                                    min-height: 0px;
+                                    // Empty space: left-click clears the selection,
+                                    // right-click opens the folder menu.
+                                    TouchArea {
+                                        pointer-event(e) => {
+                                            if e.kind == PointerEventKind.down {
+                                                fs.focus();
+                                                if e.button == PointerEventButton.right {
+                                                    Bridge.background-context(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                                                } else if e.button == PointerEventButton.left {
+                                                    Bridge.background-click();
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Drop files on empty space to put them in this folder.
+                                    DropArea {
+                                        enabled: Bridge.in-folder;
+                                        can-drop(e) => {
+                                            return Bridge.can-drop-here(e.data) ? e.proposed-action : DragAction.none;
+                                        }
+                                        dropped(e) => {
+                                            Bridge.drop-here(e.data);
+                                            return e.proposed-action;
+                                        }
+                                    }
+                                    files := FileList {
+                                        visible: Bridge.view-mode == 0;
+                                        focused: fs.has-focus;
+                                        focus-requested => { fs.focus(); }
+                                    }
+                                    grid := IconGrid {
+                                        visible: Bridge.view-mode == 1;
+                                        focused: fs.has-focus;
+                                        focus-requested => { fs.focus(); }
+                                    }
+                                    columns := ColumnView {
+                                        visible: Bridge.view-mode == 2;
+                                        focused: fs.has-focus;
+                                        focus-requested => { fs.focus(); }
+                                    }
+                                    gallery := GalleryView {
+                                        visible: Bridge.view-mode == 3;
+                                        focused: fs.has-focus;
+                                        focus-requested => { fs.focus(); }
+                                    }
+                                    if Bridge.at-computer: ComputerView { }
+                                    if Bridge.files.length == 0 && !Bridge.loading && !Bridge.at-computer && Bridge.view-mode != 2 && Bridge.view-mode != 3: Text {
+                                        y: 28px;
+                                        height: parent.height - 28px;
+                                        text: Bridge.error-text != "" ? Bridge.error-text : Bridge.empty-text;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        wrap: word-wrap;
+                                        color: Theme.text-tertiary;
+                                    }
+                                    // Nothing matches here: one click searches the subfolders.
+                                    if Bridge.files.length == 0 && !Bridge.loading && Bridge.filter-text != "" && Bridge.can-search-deeper: Rectangle {
+                                        width: deep-label.preferred-width + 32px;
+                                        height: 32px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: parent.height / 2 + 34px;
+                                        border-radius: 16px;
+                                        background: deep-ta.pressed ? Theme.selection : Theme.accent;
+                                        deep-label := Text {
+                                            text: "Search home folder";
+                                            font-weight: 600;
+                                            color: #ffffff;
+                                        }
+                                        deep-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { Bridge.search-submit(Bridge.filter-text); }
+                                        }
+                                    }
+                                }
+                                // Drag the divider to resize the preview.
+                                if Bridge.preview-pane && !Layout.narrow && Bridge.layout == 0 && Bridge.view-mode <= 1 && !Bridge.at-computer: Splitter {
+                                    target-width: Bridge.preview-pane-width;
+                                    grows-left: true;
+                                    minimum: 200px;
+                                    maximum: max(200px, root.width - 520px);
+                                    resized(w) => { Bridge.preview-pane-width = w; }
+                                }
+                                if Bridge.preview-pane && !Layout.narrow && Bridge.layout == 0 && Bridge.view-mode <= 1 && !Bridge.at-computer: PreviewPane {
+                                    // Never more than the list can spare: at most 40% of
+                                    // the space on smaller windows.
+                                    width: min(Bridge.preview-pane-width, max(200px, root.width - 520px), Layout.compact ? max(200px, (root.width - Theme.sidebar-width) * 0.4) : 10000px);
+                                }
+                            }
+                            }
+                        }
+                    }
+                    StatusBar { }
+                }
+            }
+
+        // Narrow windows: the sidebar slides in over the list.
+        if Layout.narrow && Layout.sidebar-open: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #00000040;
+            TouchArea {
+                clicked => { Layout.sidebar-open = false; }
+            }
+            Sidebar {
+                x: 0px;
+                height: parent.height;
+                drop-shadow-blur: 18px;
+                drop-shadow-color: #00000066;
+                item-clicked => {
+                    Layout.sidebar-open = false;
+                    fs.focus();
+                }
+            }
+        }
+
+        if Bridge.quicklook: QuickLook {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if Bridge.help-open: HelpDialog {
+            width: parent.width;
+            height: parent.height;
+            closed => { fs.focus(); }
+        }
+
+        if Bridge.palette-open: CommandPalette {
+            width: parent.width;
+            height: parent.height;
+            closed => { fs.focus(); }
+        }
+
+        if Bridge.layout-picker-open: LayoutPicker {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if Bridge.menu-open: AppMenu {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if Bridge.settings-open: SettingsDialog {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if Bridge.renaming: RenameDialog {
+            width: parent.width;
+            height: parent.height;
+            closed => { fs.focus(); }
+        }
+
+        if Bridge.toast != "": Rectangle {
+            property <length> btn: Bridge.toast-action != "" ? 64px : 0px;
+            width: min(root.width - 260px, toast-text.preferred-width + 36px + self.btn + (self.btn > 0 ? 10px : 0px));
+            height: toast-text.height + 18px;
+            x: (Layout.narrow ? 0px : Theme.sidebar-width) + (root.width - (Layout.narrow ? 0px : Theme.sidebar-width) - self.width) / 2;
+            y: root.height - self.height - 44px;
+            border-radius: 12px;
+            background: Theme.accent;
+            drop-shadow-blur: 14px;
+            drop-shadow-color: #00000055;
+            drop-shadow-offset-y: 3px;
+            toast-text := Text {
+                x: 18px;
+                y: 9px;
+                width: parent.width - 36px - parent.btn - (parent.btn > 0 ? 10px : 0px);
+                height: self.preferred-height;
+                text: Bridge.toast;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+                font-weight: 600;
+                color: #ffffff;
+            }
+            TouchArea {
+                clicked => { Bridge.toast = ""; }
+            }
+            if Bridge.toast-action != "": Rectangle {
+                x: parent.width - self.width - 8px;
+                y: (parent.height - self.height) / 2;
+                width: parent.btn;
+                height: 26px;
+                border-radius: 7px;
+                background: undo-ta.pressed ? #ffffff55 : undo-ta.has-hover ? #ffffff40 : #ffffff2e;
+                Text {
+                    text: Bridge.toast-action;
+                    font-weight: 700;
+                    color: #ffffff;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                undo-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Bridge.toast-action-clicked(); }
+                }
+            }
+        }
+
+        // Hover tooltips for toolbar buttons, on top of everything.
+        if Tip.shown: TipBubble {
+            area-width: root.width;
+        }
+
+        // Invisible full-window layer: changing it makes the next frame
+        // redraw everything. Windows can drop the window's picture (Show
+        // Desktop, minimise, switching apps); without this only the parts
+        // that changed were redrawn and the rest showed the desktop.
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: root.width;
+            height: root.height;
+            background: Math.mod(Bridge.repaint-serial, 2) == 0 ? #00000000 : #00000001;
+        }
+    }
+}

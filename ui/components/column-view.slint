@@ -1,0 +1,327 @@
+import { SlimScroll } from "controls.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge } from "../bridge.slint";
+import { FileRow } from "../types.slint";
+import { PreviewBody, InfoBlock } from "preview.slint";
+import { TagDots } from "controls.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+component PaneRow inherits Rectangle {
+    in property <FileRow> file;
+    in property <bool> active;
+    // -1 current folder, -2 preview column, >= 0 parent columns
+    in property <int> pane-id;
+    in property <int> index;
+    callback pressed(ctrl: bool, shift: bool);
+    callback activated();
+
+    property <bool> strong: root.file.selected && root.active;
+    height: Theme.pane-row;
+
+    Rectangle {
+        x: 5px;
+        width: parent.width - 10px;
+        border-radius: 5px;
+        background: drop.has-drag ? Theme.focus-ring
+            : root.file.selected ? (root.active ? Theme.selection : Theme.selection-inactive)
+            : ta.has-hover ? Theme.hover : transparent;
+        border-width: root.file.cursor && !root.file.selected && root.active ? 1px : 0px;
+        border-color: Theme.focus-ring;
+    }
+    if (root.file.icon == "folder" || root.file.icon == "folderlink"): FolderIcon {
+        alias: root.file.icon == "folderlink";
+        x: 12px;
+        y: (parent.height - self.height) / 2;
+        width: Theme.row-icon;
+        height: Theme.row-icon;
+        tint: root.file.tint;
+        opacity: root.file.hidden ? 0.5 : 1.0;
+    }
+    if root.file.icon != "folder" && root.file.icon != "folderlink": Image {
+        x: 12px;
+        y: (parent.height - self.height) / 2;
+        width: Theme.row-icon;
+        height: Theme.row-icon;
+        source: root.file.has-sys-icon ? root.file.sys-icon : Icons.file(root.file.icon);
+        opacity: root.file.hidden ? 0.5 : 1.0;
+    }
+    pane-name := Text {
+        x: 12px + Theme.row-icon + 7px;
+        width: parent.width - self.x - 26px - ((root.file.tags > 0 && root.file.icon != "folder" && root.file.icon != "folderlink") ? 30px : 0px);
+        height: parent.height;
+        text: root.file.name;
+        font-size: Theme.row-font;
+        vertical-alignment: center;
+        overflow: elide;
+        color: root.strong ? Theme.selection-text : Theme.text;
+        opacity: root.file.hidden ? 0.6 : 1.0;
+    }
+    if (root.file.tags > 0 && root.file.icon != "folder" && root.file.icon != "folderlink"): TagDots {
+        // A fixed slot at the row's end (where folders show their arrow),
+        // so dots line up down the column whatever the name's length.
+        width: 40px;
+        x: parent.width - 16px - self.width;
+        y: (parent.height - self.height) / 2;
+        mask: root.file.tags;
+        right-aligned: true;
+    }
+    if root.file.is-dir: Image {
+        x: parent.width - 22px;
+        y: (parent.height - self.height) / 2;
+        width: 9px;
+        height: 9px;
+        source: Icons.glyph("crumb");
+        colorize: root.strong ? Theme.selection-text : Theme.text-tertiary;
+    }
+
+    drop := DropArea {
+        enabled: root.file.is-dir;
+        can-drop(e) => {
+            return Bridge.can-drop-pane(root.pane-id, root.index, e.data) ? e.proposed-action : DragAction.none;
+        }
+        dropped(e) => {
+            Bridge.drop-pane(root.pane-id, root.index, e.data);
+            return e.proposed-action;
+        }
+    }
+
+    // Only the current folder's selection is draggable.
+    DragArea {
+        enabled: root.pane-id == -1;
+        data: Bridge.drag-data;
+        allow-copy: true;
+        allow-move: true;
+        drag-image: Icons.file(root.file.icon);
+        ta := TouchArea {
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                    root.pressed(e.modifiers.control, e.modifiers.shift);
+                } else if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
+                    Bridge.pane-context(root.pane-id, root.index, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                }
+            }
+            double-clicked => { root.activated(); }
+        }
+    }
+}
+
+// One column: a virtualized list of a folder's contents.
+component Pane inherits Rectangle {
+    in property <[FileRow]> files;
+    in property <int> scroll-row: -1;
+    in property <bool> active;
+    in property <int> pane-id;
+    callback pressed(row: int, ctrl: bool, shift: bool);
+    callback activated(row: int);
+
+    public function scroll-to(row: int) {
+        if row < 0 {
+            return;
+        }
+        if row * Theme.pane-row < -list.content-y {
+            list.content-y = -row * Theme.pane-row;
+        } else if (row + 1) * Theme.pane-row > -list.content-y + list.visible-height {
+            list.content-y = -((row + 1) * Theme.pane-row - list.visible-height);
+        }
+    }
+
+    public function scroll-top() {
+        list.content-y = 0px;
+    }
+
+    public pure function page-rows() -> int {
+        return max(1, floor(list.visible-height / Theme.pane-row) - 1);
+    }
+
+    // Centers the path item. Deferred one frame: right after the model
+    // changes, the list hasn't measured its new content yet.
+    property <bool> center-pending;
+    // Row to bring into view on the next frame (keyboard/selection changes
+    // that arrive together with a fresh model).
+    property <int> reveal-row: -1;
+    public function reveal(row: int) {
+        root.scroll-to(row);
+        root.reveal-row = row;
+        root.center-pending = true;
+    }
+    function center-on(row: int) {
+        if row < 0 {
+            return;
+        }
+        list.content-y = -max(0px, min(row * Theme.pane-row - list.visible-height / 2, root.files.length * Theme.pane-row - list.visible-height));
+    }
+    Timer {
+        interval: 16ms;
+        running: root.center-pending;
+        triggered => {
+            root.center-pending = false;
+            if root.reveal-row >= 0 {
+                root.scroll-to(root.reveal-row);
+                root.reveal-row = -1;
+            } else {
+                root.center-on(root.scroll-row);
+            }
+        }
+    }
+    changed scroll-row => {
+        root.center-pending = true;
+    }
+    init => {
+        root.center-pending = true;
+    }
+
+    width: Theme.pane-width;
+
+    list := ListView {
+        vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+        y: 4px;
+        width: parent.width - 1px;
+        height: parent.height - 4px;
+        for f[i] in root.files: PaneRow {
+            file: f;
+            active: root.active;
+            pane-id: root.pane-id;
+            index: i;
+            pressed(ctrl, shift) => { root.pressed(i, ctrl, shift); }
+            activated => { root.activated(i); }
+        }
+    }
+    SlimScroll {
+        x: list.x + list.width - self.width - 1px;
+        y: list.y;
+        height: list.height;
+        content-y <=> list.content-y;
+        content-height: list.content-height;
+        visible-height: list.visible-height;
+    }
+    Rectangle {
+        x: parent.width - 1px;
+        width: resize.has-hover || resize.pressed ? 2px : 1px;
+        background: resize.has-hover || resize.pressed ? Theme.accent : Theme.border;
+    }
+    property <length> start-width;
+    property <length> start-x;
+    // Drag a column's right edge to resize the columns; the preview takes the rest.
+    resize := TouchArea {
+        x: parent.width - 5px;
+        width: 9px;
+        mouse-cursor: col-resize;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.start-width = Bridge.pane-width;
+                root.start-x = self.absolute-position.x + self.mouse-x;
+            }
+        }
+        moved => {
+            if self.pressed {
+                Bridge.pane-width = max(140px, min(640px, root.start-width + self.absolute-position.x + self.mouse-x - root.start-x));
+            }
+        }
+    }
+}
+
+// Finder-style column view: one column per parent folder (with the path
+// highlighted), then the current folder, then a preview of the selection.
+export component ColumnView inherits Rectangle {
+    in property <bool> focused;
+    callback focus-requested();
+
+    property <length> lists-width: (Bridge.panes.length + 1) * Theme.pane-width;
+    // The preview column takes whatever width is left (at least preview-width).
+    property <length> preview-w: max(Theme.preview-width, sv.visible-width - root.lists-width);
+    property <length> total: root.lists-width + root.preview-w;
+    property <int> pane-count: Bridge.panes.length;
+    property <bool> absolute: Bridge.columns-absolute;
+    changed absolute => {
+        Bridge.columns-setting-changed();
+    }
+
+    public function scroll-to(row: int) {
+        current.reveal(row);
+    }
+
+    public function scroll-top() {
+        current.scroll-top();
+    }
+
+    public pure function page-rows() -> int {
+        return current.page-rows();
+    }
+
+    // Keep the current folder and the preview in view.
+    function scroll-end() {
+        sv.content-x = min(0px, sv.visible-width - root.total);
+    }
+
+    changed pane-count => {
+        root.scroll-end();
+    }
+    changed width => {
+        root.scroll-end();
+    }
+
+    background: Theme.surface;
+
+    sv := ScrollView {
+        width: parent.width;
+        height: parent.height;
+        content-width: max(root.total, self.visible-width);
+        content-height: self.visible-height;
+
+        HorizontalLayout {
+            height: sv.visible-height;
+            alignment: start;
+
+            for p[i] in Bridge.panes: Pane {
+                pane-id: i;
+                files: p.files;
+                scroll-row: p.selected;
+                pressed(row, ctrl, shift) => {
+                    root.focus-requested();
+                    Bridge.pane-clicked(i, row);
+                }
+                activated(row) => { Bridge.pane-activated(i, row); }
+            }
+
+            current := Pane {
+                pane-id: -1;
+                files: Bridge.files;
+                active: root.focused;
+                pressed(row, ctrl, shift) => {
+                    root.focus-requested();
+                    Bridge.row-pressed(row, ctrl, shift);
+                }
+                activated(row) => { Bridge.row-activated(row); }
+            }
+
+            Rectangle {
+                width: root.preview-w;
+
+                if Bridge.preview-mode == 1: Pane {
+                    pane-id: -2;
+                    width: parent.width;
+                    height: parent.height;
+                    files: Bridge.preview-files;
+                    pressed(row, ctrl, shift) => {
+                        root.focus-requested();
+                        Bridge.preview-clicked(row);
+                    }
+                    activated(row) => { Bridge.preview-activated(row); }
+                    }
+
+                if Bridge.preview-mode == 2: VerticalLayout {
+                    padding: 14px;
+                    spacing: 12px;
+                    PreviewBody {
+                        vertical-stretch: 1;
+                        min-height: 120px;
+                        active: Bridge.view-mode == 2 && !Bridge.quicklook;
+                    }
+                    InfoBlock { }
+                }
+            }
+        }
+    }
+}

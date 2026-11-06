@@ -1,0 +1,417 @@
+import { SlimScroll } from "controls.slint";
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { Bridge, Layout } from "../bridge.slint";
+import { FileRow } from "../types.slint";
+import { TagDots } from "controls.slint";
+import { FolderIcon } from "folder-icon.slint";
+
+// Gap in front of a fixed-width column. In the header it is also the drag
+// handle that resizes the column to its right.
+component ResizeGap inherits Rectangle {
+    in property <bool> handle: false;
+    in property <length> target-width;
+    callback resized(width: length);
+
+    width: Theme.col-gap;
+
+    if root.handle: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 6px;
+        width: 1px;
+        height: parent.height - 12px;
+        background: ta.has-hover || ta.pressed ? Theme.accent : Theme.border;
+    }
+
+    property <length> start-width;
+    property <length> start-x;
+
+    ta := TouchArea {
+        enabled: root.handle;
+        mouse-cursor: col-resize;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.start-width = root.target-width;
+                root.start-x = self.absolute-position.x + self.mouse-x;
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.resized(max(56px, root.start-width - (self.absolute-position.x + self.mouse-x - root.start-x)));
+            }
+        }
+    }
+}
+
+component ColumnHeader inherits Rectangle {
+    in property <string> title;
+    in property <int> column;
+    in property <bool> align-right;
+    // Right-click; position is in window coordinates.
+    callback context-requested(position: Point);
+    property <bool> active: Bridge.sort-column == root.column;
+
+    ta := TouchArea {
+        clicked => { Bridge.sort-by(root.column); }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
+                root.context-requested({
+                    x: self.absolute-position.x + self.mouse-x,
+                    y: self.absolute-position.y + self.mouse-y,
+                });
+            }
+        }
+    }
+
+    label := Text {
+        x: root.align-right ? parent.width - self.width : 0px;
+        height: parent.height;
+        text: root.title;
+        vertical-alignment: center;
+        font-size: Theme.font-label;
+        font-weight: root.active ? 600 : 400;
+        color: root.active || ta.has-hover ? Theme.text : Theme.text-secondary;
+    }
+
+    if root.active: Image {
+        x: root.align-right ? label.x - self.width - 3px : label.width + 4px;
+        y: (parent.height - self.height) / 2;
+        width: 9px;
+        height: 9px;
+        source: Icons.glyph(Bridge.sort-ascending ? "sort-up" : "sort-down");
+        colorize: Theme.text-secondary;
+    }
+}
+
+component FileRowView inherits Rectangle {
+    in property <FileRow> file;
+    in property <int> index;
+    in property <bool> focused;
+    callback pressed(ctrl: bool, shift: bool);
+    callback activated();
+    callback middle();
+
+    property <bool> strong: root.file.selected && root.focused;
+    property <color> fg: self.strong ? Theme.selection-text : Theme.text;
+    property <color> fg2: self.strong ? Theme.selection-text-secondary : Theme.text-secondary;
+
+    height: Theme.row-height;
+
+    Rectangle {
+        x: Theme.list-inset;
+        width: parent.width - 2 * Theme.list-inset;
+        border-radius: 5px;
+        background: drop.has-drag ? Theme.focus-ring
+            : root.file.selected ? (root.focused ? Theme.selection : Theme.selection-inactive)
+            : ta.has-hover ? Theme.hover
+            : Math.mod(root.index, 2) == 1 ? Theme.row-alt : transparent;
+        border-width: root.file.cursor && !root.file.selected && root.focused ? 1px : 0px;
+        border-color: Theme.focus-ring;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.list-padding;
+        padding-right: Theme.list-padding;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 120px;
+            if (root.file.icon == "folder" || root.file.icon == "folderlink"): FolderIcon {
+        alias: root.file.icon == "folderlink";
+                x: 0px;
+                y: (parent.height - self.height) / 2;
+                width: Theme.row-icon;
+                height: Theme.row-icon;
+                tint: root.file.tint;
+                opacity: root.file.hidden ? 0.5 : 1.0;
+            }
+            if root.file.icon != "folder" && root.file.icon != "folderlink": Image {
+                x: 0px;
+                y: (parent.height - self.height) / 2;
+                width: Theme.row-icon;
+                height: Theme.row-icon;
+                source: root.file.has-sys-icon ? root.file.sys-icon : Icons.file(root.file.icon);
+                opacity: root.file.hidden ? 0.5 : 1.0;
+            }
+            name-text := Text {
+                x: Theme.row-icon + 7px;
+                width: parent.width - self.x - 4px;
+                height: parent.height;
+                text: root.file.name;
+                font-size: Theme.row-font;
+                vertical-alignment: center;
+                overflow: elide;
+                color: root.fg;
+                opacity: root.file.hidden ? 0.6 : 1.0;
+            }
+        }
+        if Layout.col-date: ResizeGap { }
+        if Layout.col-date: Text {
+            width: Bridge.col-date-w;
+            text: root.file.date;
+            font-size: Theme.row-font;
+            vertical-alignment: center;
+            overflow: elide;
+            color: root.fg2;
+        }
+        if Layout.col-created: ResizeGap { }
+        if Layout.col-created: Text {
+            width: Bridge.col-created-w;
+            text: root.file.created;
+            font-size: Theme.row-font;
+            vertical-alignment: center;
+            overflow: elide;
+            color: root.fg2;
+        }
+        if Layout.col-size: ResizeGap { }
+        if Layout.col-size: Text {
+            width: Bridge.col-size-w;
+            text: root.file.size;
+            font-size: Theme.row-font;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+            color: root.fg2;
+        }
+        if Layout.col-share: ResizeGap { }
+        if Layout.col-share: Rectangle {
+            width: Bridge.col-share-w;
+            // "% of this folder" bar, like a disk-usage report.
+            if root.file.share >= 0: Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 15px;
+                border-radius: 3px;
+                background: Theme.field;
+                border-width: 1px;
+                border-color: root.strong ? Theme.selection-text-secondary : Theme.border;
+                clip: true;
+                Rectangle {
+                    x: 0px;
+                    width: max(0, min(1, root.file.share)) * parent.width;
+                    background: Theme.accent;
+                    opacity: 0.85;
+                }
+                Text {
+                    text: root.file.share-text;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    color: root.file.share > 0.5 || root.strong ? #ffffff : root.fg;
+                }
+            }
+            if root.file.share < 0 && root.file.is-dir: Text {
+                text: "…";
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: root.fg2;
+            }
+        }
+        if Layout.col-kind: ResizeGap { }
+        if Layout.col-kind: Text {
+            width: Bridge.col-kind-w;
+            text: root.file.kind;
+            font-size: Theme.row-font;
+            vertical-alignment: center;
+            overflow: elide;
+            color: root.fg2;
+        }
+        // Colour tags: their own slot at the end of the row, never over the name.
+        Rectangle {
+            width: 44px;
+            if (root.file.tags > 0 && root.file.icon != "folder" && root.file.icon != "folderlink"): TagDots {
+                x: 2px;
+                width: parent.width - 2px;
+                y: (parent.height - self.height) / 2;
+                mask: root.file.tags;
+                right-aligned: true;
+            }
+        }
+    }
+
+    // Folders accept drops.
+    drop := DropArea {
+        enabled: root.file.is-dir;
+        can-drop(e) => {
+            return Bridge.can-drop-row(root.index, e.data) ? e.proposed-action : DragAction.none;
+        }
+        dropped(e) => {
+            Bridge.drop-row(root.index, e.data);
+            return e.proposed-action;
+        }
+    }
+
+    // Drag the selection; a plain click still selects/opens.
+    DragArea {
+        data: Bridge.drag-data;
+        allow-copy: true;
+        allow-move: true;
+        drag-image: Icons.file(root.file.icon);
+        ta := TouchArea {
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
+                    if e.button == PointerEventButton.left {
+                        root.pressed(e.modifiers.control, e.modifiers.shift);
+                    } else if e.button == PointerEventButton.middle {
+                        root.middle();
+                    } else if e.button == PointerEventButton.right {
+                        Bridge.row-context(root.index, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    }
+                }
+            }
+            double-clicked => { root.activated(); }
+        }
+    }
+}
+
+export component FileList inherits Rectangle {
+    in property <bool> focused;
+    callback focus-requested();
+
+    // Let the list get narrower than its columns (the right-most columns are
+    // clipped) so the preview pane and window can shrink/grow freely.
+    min-width: 260px;
+    // Columns drop out on narrow lists (see Layout).
+    init => { Layout.list-width = self.width; }
+    changed width => { Layout.list-width = self.width; }
+    clip: true;
+
+    // Keeps a row on screen after keyboard navigation.
+    public function scroll-to(row: int) {
+        if row < 0 {
+            return;
+        }
+        if row * Theme.row-height < -list.content-y {
+            list.content-y = -row * Theme.row-height;
+        } else if (row + 1) * Theme.row-height > -list.content-y + list.visible-height {
+            list.content-y = -((row + 1) * Theme.row-height - list.visible-height);
+        }
+    }
+
+    public function scroll-top() {
+        list.content-y = 0px;
+    }
+
+    public pure function page-rows() -> int {
+        return max(1, floor(list.visible-height / Theme.row-height) - 1);
+    }
+
+    function show-columns-menu(p: Point) {
+        Bridge.header-context(p.x, p.y);
+    }
+
+    background: Theme.surface;
+
+    VerticalLayout {
+        // Header: click to sort, drag the separators to resize,
+        // right-click to choose columns.
+        header := Rectangle {
+            height: 28px;
+                HorizontalLayout {
+                    padding-left: Theme.list-padding;
+                    padding-right: Theme.list-padding;
+                    ColumnHeader {
+                        title: "Name";
+                        column: 0;
+                        context-requested(p) => { root.show-columns-menu(p); }
+                        horizontal-stretch: 1;
+                        min-width: 120px;
+                    }
+                    if Layout.col-date: ResizeGap {
+                        handle: true;
+                        target-width: Bridge.col-date-w;
+                        resized(w) => { Bridge.col-date-w = w; }
+                    }
+                    if Layout.col-date: ColumnHeader {
+                        title: "Date Modified";
+                        column: 1;
+                        context-requested(p) => { root.show-columns-menu(p); }
+                        width: Bridge.col-date-w;
+                    }
+                    if Layout.col-created: ResizeGap {
+                        handle: true;
+                        target-width: Bridge.col-created-w;
+                        resized(w) => { Bridge.col-created-w = w; }
+                    }
+                    if Layout.col-created: ColumnHeader {
+                        title: "Date Created";
+                        column: 4;
+                        context-requested(p) => { root.show-columns-menu(p); }
+                        width: Bridge.col-created-w;
+                    }
+                    if Layout.col-size: ResizeGap {
+                        handle: true;
+                        target-width: Bridge.col-size-w;
+                        resized(w) => { Bridge.col-size-w = w; }
+                    }
+                    if Layout.col-size: ColumnHeader {
+                        title: "Size";
+                        column: 2;
+                        context-requested(p) => { root.show-columns-menu(p); }
+                        width: Bridge.col-size-w;
+                        align-right: true;
+                    }
+                    if Layout.col-share: ResizeGap {
+                        handle: true;
+                        target-width: Bridge.col-share-w;
+                        resized(w) => { Bridge.col-share-w = w; }
+                    }
+                    if Layout.col-share: ColumnHeader {
+                        title: "% of Folder";
+                        column: 2;
+                        context-requested(p) => { root.show-columns-menu(p); }
+                        width: Bridge.col-share-w;
+                    }
+                    if Layout.col-kind: ResizeGap {
+                        handle: true;
+                        target-width: Bridge.col-kind-w;
+                        resized(w) => { Bridge.col-kind-w = w; }
+                    }
+                    if Layout.col-kind: ColumnHeader {
+                        title: "Kind";
+                        column: 3;
+                        context-requested(p) => { root.show-columns-menu(p); }
+                        width: Bridge.col-kind-w;
+                    }
+                    // Matches the tag slot at the end of each row.
+                    Rectangle { width: 44px; }
+                }
+            Rectangle {
+                x: Theme.list-padding;
+                y: parent.height - 1px;
+                width: parent.width - 2 * Theme.list-padding;
+                height: 1px;
+                background: Theme.border;
+            }
+        }
+
+        // Virtualized: only the visible rows exist as UI elements.
+        Rectangle {
+            vertical-stretch: 1;
+            list := ListView {
+                            width: parent.width;
+                            height: parent.height;
+                            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                            for row[i] in Bridge.files: FileRowView {
+                    file: row;
+                    index: i;
+                    focused: root.focused;
+                    pressed(ctrl, shift) => {
+                        root.focus-requested();
+                        Bridge.row-pressed(i, ctrl, shift);
+                    }
+                    activated => { Bridge.row-activated(i); }
+                    middle => { Bridge.row-middle(i); }
+                }
+            }
+    SlimScroll {
+        x: parent.width - self.width - 1px;
+        y: 0px;
+        height: parent.height;
+        content-y <=> list.content-y;
+        content-height: list.content-height;
+        visible-height: list.visible-height;
+    }
+        }
+    }
+}
