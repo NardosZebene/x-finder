@@ -17,6 +17,7 @@ import { StatusBar } from "components/statusbar.slint";
 import { RenameDialog } from "components/rename.slint";
 import { AppMenu } from "components/menu.slint";
 import { SettingsDialog } from "components/settings.slint";
+import { ShortcutsDialog } from "components/shortcuts.slint";
 import { ComputerView } from "components/computer.slint";
 import { Splitter, Tip, TipBubble } from "components/controls.slint";
 import { Split, MiniPane, PaneHeader, LayoutPicker } from "components/split.slint";
@@ -89,6 +90,12 @@ export component MainWindow inherits Window {
         Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
     }
 
+    // Search / type-a-path shortcuts (keys chosen in Settings, run in Rust).
+    property <int> search-serial: Bridge.focus-search-serial;
+    changed search-serial => { toolbar.focus-filter(); }
+    property <int> path-serial: Bridge.edit-path-serial;
+    changed path-serial => { toolbar.edit-path(); }
+
     fs := FocusScope {
         key-pressed(e) => {
             if Bridge.menu-open {
@@ -106,14 +113,14 @@ export component MainWindow inherits Window {
             }
             if Bridge.settings-open {
                 if e.text == Key.Escape {
-                    Bridge.settings-set("close", 0);
+                    if Bridge.shortcuts-open {
+                        Bridge.shortcuts-open = false;
+                    } else {
+                        Bridge.settings-set("close", 0);
+                    }
                     return accept;
                 }
                 return reject;
-            }
-            if e.modifiers.control && e.text == "," {
-                Bridge.settings-set("open", 1);
-                return accept;
             }
             if Bridge.renaming {
                 if e.text == Key.Escape {
@@ -133,14 +140,6 @@ export component MainWindow inherits Window {
                     fs.focus();
                     return accept;
                 }
-            }
-            if e.modifiers.control && !e.modifiers.alt && (e.text == "l" || e.text == "L") {
-                toolbar.edit-path();
-                return accept;
-            }
-            if e.modifiers.control && !e.modifiers.alt && (e.text == "f" || e.text == "F") {
-                toolbar.focus-filter();
-                return accept;
             }
             // While typing in a text field, only shortcuts reach the file list.
             if toolbar.text-focused {
@@ -358,6 +357,11 @@ export component MainWindow inherits Window {
         }
 
         if Bridge.settings-open: SettingsDialog {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if Bridge.settings-open && Bridge.shortcuts-open: ShortcutsDialog {
             width: parent.width;
             height: parent.height;
         }

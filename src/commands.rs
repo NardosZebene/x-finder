@@ -55,6 +55,16 @@ pub enum Command {
     CursorPage { down: bool, extend: bool },
     CursorHome { extend: bool },
     CursorEnd { extend: bool },
+    /// Settings page (Ctrl+,).
+    Settings,
+    /// Toolbar "folder sizes" mode.
+    FolderSizes,
+    /// The search box (Ctrl+F) and typing a path (Ctrl+L).
+    Search,
+    EditPath,
+    /// Quits for real (closing the window only hides it while an "open X
+    /// Finder" key is set).
+    Quit,
 }
 
 impl Command {
@@ -100,6 +110,11 @@ impl Command {
             Command::Palette => "Command Palette",
             Command::GoTo => "Go to Folder…",
             Command::Help => "Help: How to Use",
+            Command::Settings => "Settings",
+            Command::FolderSizes => "Show/Hide Folder Sizes",
+            Command::Search => "Search",
+            Command::EditPath => "Type a Path",
+            Command::Quit => "Quit X Finder",
             Command::CursorBy { .. }
             | Command::CursorSide { .. }
             | Command::CursorPage { .. }
@@ -111,6 +126,153 @@ impl Command {
 
 fn is(c: char, key: Key) -> bool {
     c == char::from(key)
+}
+
+/// Actions people can give their own key (Settings → Keyboard shortcuts):
+/// (id saved in settings, command, default key).
+pub const BINDABLE: &[(&str, Command, &str)] = {
+    use Command::*;
+    &[
+        ("palette", Palette, "Ctrl+Shift+P"),
+        ("search", Search, "Ctrl+F"),
+        ("goto", GoTo, "Ctrl+G"),
+        ("edit-path", EditPath, "Ctrl+L"),
+        ("quick-look", QuickLook, "Space"),
+        ("preview", TogglePreviewPane, "Ctrl+P"),
+        ("view-list", ViewList, "Ctrl+1"),
+        ("view-icons", ViewIcons, "Ctrl+2"),
+        ("view-columns", ViewColumns, "Ctrl+3"),
+        ("view-gallery", ViewGallery, "Ctrl+4"),
+        ("folder-sizes", FolderSizes, ""),
+        ("hidden", ToggleHidden, "Ctrl+H"),
+        ("back", Back, "Alt+Left"),
+        ("forward", Forward, "Alt+Right"),
+        ("up", Up, "Alt+Up"),
+        ("refresh", Refresh, "F5"),
+        ("show-enclosing", ShowEnclosing, ""),
+        ("new-tab", NewTab, "Ctrl+T"),
+        ("close-tab", CloseTab, "Ctrl+W"),
+        ("next-tab", NextTab, "Ctrl+Tab"),
+        ("prev-tab", PrevTab, "Ctrl+Shift+Tab"),
+        ("open-new-tab", OpenInNewTab, "Ctrl+Enter"),
+        ("new-folder", NewFolder, "Ctrl+Shift+N"),
+        ("rename", Rename, "F2"),
+        ("copy", Copy, "Ctrl+C"),
+        ("cut", Cut, "Ctrl+X"),
+        ("paste", Paste, "Ctrl+V"),
+        ("duplicate", Duplicate, "Ctrl+D"),
+        ("copy-path", CopyPath, "Ctrl+Shift+C"),
+        ("recycle", Recycle, "Delete"),
+        ("delete-forever", DeleteForever, "Shift+Delete"),
+        ("properties", Properties, "Alt+Enter"),
+        ("select-all", SelectAll, "Ctrl+A"),
+        ("bigger", DensityLooser, "Ctrl+="),
+        ("smaller", DensityTighter, "Ctrl+-"),
+        ("settings", Settings, "Ctrl+,"),
+        ("help", Help, "F1"),
+        ("quit", Quit, ""),
+    ]
+};
+
+thread_local! {
+    /// The user's own keys (id → key; "" = no key), from settings.
+    static USER_KEYS: std::cell::RefCell<std::collections::BTreeMap<String, String>> = Default::default();
+}
+
+pub fn set_user_keys(keys: &std::collections::BTreeMap<String, String>) {
+    USER_KEYS.with(|k| *k.borrow_mut() = keys.clone());
+}
+
+/// The key an action has now ("" = none).
+pub fn key_for_id(id: &str) -> String {
+    let default = BINDABLE.iter().find(|b| b.0 == id).map_or("", |b| b.2);
+    USER_KEYS.with(|k| k.borrow().get(id).cloned()).unwrap_or_else(|| default.to_string())
+}
+
+/// The key a command has now, for menus and the palette.
+pub fn key_for(cmd: Command) -> Option<String> {
+    BINDABLE.iter().find(|b| b.1 == cmd).map(|b| key_for_id(b.0))
+}
+
+/// "Ctrl+Shift+P" for a key event; None for a lone modifier key.
+pub fn combo(text: &str, ctrl: bool, alt: bool, shift: bool) -> Option<String> {
+    let mut chars = text.chars();
+    let c = chars.next()?;
+    if chars.next().is_some() {
+        return None;
+    }
+    let named = [
+        (Key::Return, "Enter"),
+        (Key::Tab, "Tab"),
+        (Key::Backtab, "Tab"),
+        (Key::Backspace, "Backspace"),
+        (Key::Delete, "Delete"),
+        (Key::Insert, "Insert"),
+        (Key::Escape, "Esc"),
+        (Key::LeftArrow, "Left"),
+        (Key::RightArrow, "Right"),
+        (Key::UpArrow, "Up"),
+        (Key::DownArrow, "Down"),
+        (Key::Home, "Home"),
+        (Key::End, "End"),
+        (Key::PageUp, "PageUp"),
+        (Key::PageDown, "PageDown"),
+        (Key::F1, "F1"),
+        (Key::F2, "F2"),
+        (Key::F3, "F3"),
+        (Key::F4, "F4"),
+        (Key::F5, "F5"),
+        (Key::F6, "F6"),
+        (Key::F7, "F7"),
+        (Key::F8, "F8"),
+        (Key::F9, "F9"),
+        (Key::F10, "F10"),
+        (Key::F11, "F11"),
+        (Key::F12, "F12"),
+    ];
+    let modifiers = [Key::Shift, Key::ShiftR, Key::Control, Key::ControlR, Key::Alt, Key::AltGr, Key::Meta, Key::MetaR];
+    if modifiers.iter().any(|m| is(c, *m)) {
+        return None;
+    }
+    let shift = shift || is(c, Key::Backtab);
+    let name = match named.iter().find(|(k, _)| is(c, *k)) {
+        Some((_, n)) => n.to_string(),
+        None if c == ' ' => "Space".into(),
+        // Other keys Slint names with private-use characters: not bindable.
+        None if c.is_control() || ('\u{F700}'..='\u{F8FF}').contains(&c) => return None,
+        None => match c {
+            '+' => "=".into(),
+            '_' => "-".into(),
+            c => c.to_uppercase().to_string(),
+        },
+    };
+    let mut s = String::new();
+    if ctrl {
+        s.push_str("Ctrl+");
+    }
+    if alt {
+        s.push_str("Alt+");
+    }
+    if shift && !(name.chars().count() == 1 && !name.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())) {
+        s.push_str("Shift+");
+    }
+    s.push_str(&name);
+    Some(s)
+}
+
+/// The command for a key, with the user's own keys applied: an action
+/// given another key no longer answers to its old one.
+pub fn lookup(text: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Command> {
+    if let Some(k) = combo(text, ctrl, alt, shift) {
+        if let Some(b) = BINDABLE.iter().find(|b| key_for_id(b.0).eq_ignore_ascii_case(&k)) {
+            return Some(b.1);
+        }
+    }
+    let cmd = from_key(text, ctrl, alt, shift)?;
+    // Built-in key of an action the user moved elsewhere (or another
+    // spelling of a key that's now taken).
+    let customised = BINDABLE.iter().any(|b| b.1 == cmd && USER_KEYS.with(|k| k.borrow().contains_key(b.0)));
+    (!customised).then_some(cmd)
 }
 
 /// Keyboard map (plan §7). Returns `None` for keys that aren't shortcuts,

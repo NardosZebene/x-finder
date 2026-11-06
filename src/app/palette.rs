@@ -141,6 +141,7 @@ fn view_label(v: ViewMode) -> &'static str {
 
 /// Actions listed by name, with their shortcut.
 const ACTIONS: &[(Command, &str)] = &[
+    (Command::Quit, ""),
     (Command::NewFolder, "Ctrl+Shift+N"),
     (Command::NewTab, "Ctrl+T"),
     (Command::CloseTab, "Ctrl+W"),
@@ -561,7 +562,8 @@ impl App {
             let mut scored: Vec<(i32, PaletteItem, PAction)> = Vec::new();
             for (cmd, key) in ACTIONS {
                 if let Some(s) = score(cmd.title(), t) {
-                    scored.push((s + 50, item(cmd.title().into(), String::new(), key, "more"), PAction::Cmd(*cmd)));
+                    let key = crate::commands::key_for(*cmd).unwrap_or_else(|| key.to_string());
+                    scored.push((s + 50, item(cmd.title().into(), String::new(), &key, "more"), PAction::Cmd(*cmd)));
                 }
             }
             for c in &self.settings.saved_commands {

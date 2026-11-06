@@ -173,6 +173,30 @@ pub fn refresh_installed(exe: &Path) {
     }
 }
 
+/// Starts `exe --hidden` at sign-in (the "open X Finder" key), or with
+/// `None` stops doing so.
+pub fn set_startup(exe: Option<&Path>) {
+    #[cfg(windows)]
+    {
+        const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+        match exe {
+            Some(exe) => {
+                let _ = imp::set_string(RUN, Some("X Finder"), &format!("\"{}\" --hidden", exe.display()));
+            }
+            None => imp::delete_value(RUN, Some("X Finder")),
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = exe;
+}
+
+/// An earlier version started a background helper with Windows; take it
+/// out of start-up (it quits by itself at the next sign-in).
+pub fn remove_background() {
+    #[cfg(windows)]
+    imp::delete_value(r"Software\Microsoft\Windows\CurrentVersion\Run", Some("X Finder helper"));
+}
+
 /// True when folders currently open in this exe (or in X Finder's
 /// permanent copy).
 pub fn is_default(exe: &Path) -> bool {

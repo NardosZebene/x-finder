@@ -188,7 +188,9 @@ pub(crate) fn open_caught(dir: std::path::PathBuf, names: Vec<String>) {
     let _ = slint::invoke_from_event_loop(move || {
         with_app(|a| {
             let loc = Location::Dir(dir);
-            if a.tab().loc == loc {
+            if super::take_fresh() {
+                a.start_over(loc, names.first().cloned());
+            } else if a.tab().loc == loc {
                 // Already showing it (X Finder was started with it).
                 a.navigate(loc, names.first().cloned());
             } else {
@@ -198,11 +200,7 @@ pub(crate) fn open_caught(dir: std::path::PathBuf, names: Vec<String>) {
             if names.len() > 1 {
                 a.select_after = names;
             }
-            if let Some(ui) = a.ui() {
-                use slint::winit_030::WinitWindowAccessor;
-                ui.window().set_minimized(false);
-                ui.window().with_winit_window(|w| w.focus_window());
-            }
+            a.bring_to_front();
         });
     });
 }
@@ -218,17 +216,23 @@ fn open_from_outside(arg: String) {
                 }
             }
             let arg = arg.strip_prefix("--relay,").unwrap_or(&arg).to_string();
+            // The "open X Finder" key or Win+E while the window is hidden:
+            // just show it as it was.
             let (loc, select) = start_from_arg(Some(&arg));
             finder_rs::core::explorer_catch::log(&format!("from outside {arg:?} -> select {select:?}"));
-            a.open_tab(loc, true);
-            if let Some(name) = select {
-                a.tabs[a.active].pending_select = Some(name);
+            if super::take_fresh() {
+                // Closed (hidden) without "remember open tabs": start over
+                // with just this folder.
+                a.start_over(loc, select);
+            } else if arg == "--start" && super::window_hidden() {
+                // Remembered tabs: just show them again.
+            } else {
+                a.open_tab(loc, true);
+                if let Some(name) = select {
+                    a.tabs[a.active].pending_select = Some(name);
+                }
             }
-            if let Some(ui) = a.ui() {
-                use slint::winit_030::WinitWindowAccessor;
-                ui.window().set_minimized(false);
-                ui.window().with_winit_window(|w| w.focus_window());
-            }
+            a.bring_to_front();
         });
     });
 }
@@ -307,6 +311,11 @@ mod imp {
         if msg == WM_PAINT && unsafe { windows::Win32::Graphics::Gdi::GetUpdateRect(hwnd, None, false) }.as_bool() {
             schedule_full_repaint();
         }
+        // The "open X Finder" key while the app is open: like Win+E.
+        if msg == WM_HOTKEY && wparam.0 as i32 == OPEN_HOTKEY {
+            super::open_from_outside("--start".into());
+            return LRESULT(0);
+        }
         if msg == WM_COPYDATA {
             // SAFETY: WM_COPYDATA's lParam is a COPYDATASTRUCT valid for this call.
             let cds = unsafe { &*(lparam.0 as *const COPYDATASTRUCT) };
@@ -381,10 +390,52 @@ mod imp {
 
     /// Starts accepting folders from other processes.
     pub fn listen(hwnd: HWND) {
+        MAIN.store(hwnd.0 as isize, std::sync::atomic::Ordering::Relaxed);
         unsafe {
             let _ = SetPropW(hwnd, PROP, Some(HANDLE(1 as _)));
             let _ = SetWindowSubclass(hwnd, Some(hook), 0xF1D0, 0);
         }
+        super::with_app(|a| a.claim_open_key());
+    }
+
+    /// The main window, once it exists.
+    static MAIN: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+    // Applications may only use ids up to 0xBFFF.
+    const OPEN_HOTKEY: i32 = 0x0F1D;
+
+    /// Takes the "open X Finder" key for this window (RegisterHotKey
+    /// modifiers and virtual key), or gives it up with `None`. False when
+    /// the window doesn't exist yet or Windows still has the key elsewhere.
+    pub fn set_hotkey(key: Option<(u32, u32)>) -> bool {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{HOT_KEY_MODIFIERS, RegisterHotKey, UnregisterHotKey};
+        let h = MAIN.load(std::sync::atomic::Ordering::Relaxed);
+        if h == 0 {
+            return false;
+        }
+        let hwnd = HWND(h as _);
+        unsafe {
+            let _ = UnregisterHotKey(Some(hwnd), OPEN_HOTKEY);
+            match key {
+                Some((mods, vk)) => RegisterHotKey(Some(hwnd), OPEN_HOTKEY, HOT_KEY_MODIFIERS(mods | 0x4000), vk).is_ok(),
+                None => true,
+            }
+        }
+    }
+
+    /// An X Finder window exists (shown or hidden).
+    pub fn running() -> bool {
+        let mut target = HWND::default();
+        unsafe extern "system" fn find(h: HWND, out: LPARAM) -> BOOL {
+            if unsafe { !GetPropW(h, PROP).is_invalid() } {
+                unsafe { *(out.0 as *mut HWND) = h };
+                return false.into();
+            }
+            true.into()
+        }
+        unsafe {
+            let _ = EnumWindows(Some(find), LPARAM(&mut target as *mut HWND as isize));
+        }
+        !target.is_invalid()
     }
 
     /// Sends `arg` to a running finder-rs window; true when it took it.
@@ -392,7 +443,8 @@ mod imp {
         let mut target = HWND::default();
         unsafe extern "system" fn find(h: HWND, out: LPARAM) -> BOOL {
             // Top-most first, so the window used last gets the tab.
-            if unsafe { !GetPropW(h, PROP).is_invalid() } && unsafe { IsWindowVisible(h) }.as_bool() {
+            // Hidden too: X Finder waiting in the background for its key.
+            if unsafe { !GetPropW(h, PROP).is_invalid() } {
                 unsafe { *(out.0 as *mut HWND) = h };
                 return false.into();
             }
@@ -453,6 +505,30 @@ pub fn forward_to_running(arg: &str) -> bool {
     #[cfg(not(windows))]
     {
         let _ = arg;
+        false
+    }
+}
+
+/// An X Finder window exists (shown or hidden).
+pub fn is_running() -> bool {
+    #[cfg(windows)]
+    {
+        imp::running()
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+/// Takes (or with `None` gives up) the "open X Finder" key for the main
+/// window: (RegisterHotKey modifiers, virtual key). False if it failed.
+pub(super) fn set_open_hotkey(key: Option<(u32, u32)>) -> bool {
+    #[cfg(windows)]
+    {
+        imp::set_hotkey(key)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = key;
         false
     }
 }

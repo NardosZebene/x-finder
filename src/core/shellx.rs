@@ -351,6 +351,14 @@ mod imp {
     }
 
     pub fn create_shortcut(target: &Path, link: &Path) -> Result<(), String> {
+        create_shortcut_with(target, link, "", 0)
+    }
+
+    /// Shortcut with arguments and a Windows shortcut key (`hotkey`: low
+    /// byte the virtual key, high byte HOTKEYF_* modifiers; 0 = none).
+    /// Windows answers shortcut keys of Start menu and Desktop shortcuts
+    /// itself, so they work while the app is closed.
+    pub fn create_shortcut_with(target: &Path, link: &Path, args: &str, hotkey: u16) -> Result<(), String> {
         let msg = |e: windows::core::Error| e.message().to_string();
         // SAFETY: COM calls; strings outlive them.
         unsafe {
@@ -359,8 +367,41 @@ mod imp {
             if let Some(dir) = target.parent() {
                 let _ = sl.SetWorkingDirectory(&HSTRING::from(dir.as_os_str()));
             }
+            if !args.is_empty() {
+                let _ = sl.SetArguments(&HSTRING::from(args));
+            }
+            let _ = sl.SetHotkey(hotkey);
             let pf: IPersistFile = sl.cast().map_err(msg)?;
-            pf.Save(&HSTRING::from(link.as_os_str()), true).map_err(msg)
+            pf.Save(&HSTRING::from(link.as_os_str()), true).map_err(msg)?;
+            // Let Explorer pick up the (changed) shortcut key now.
+            let path = HSTRING::from(link.as_os_str());
+            windows::Win32::UI::Shell::SHChangeNotify(
+                windows::Win32::UI::Shell::SHCNE_UPDATEITEM,
+                windows::Win32::UI::Shell::SHCNF_PATHW,
+                Some(path.as_ptr() as *const _),
+                None,
+            );
+            Ok(())
+        }
+    }
+
+    /// Removes the Windows shortcut key from a .lnk (if it has one).
+    pub fn clear_shortcut_hotkey(link: &Path) {
+        if !link.exists() {
+            return;
+        }
+        // SAFETY: COM calls; strings outlive them.
+        unsafe {
+            let Ok(sl) = CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) else { return };
+            let Ok(pf) = sl.cast::<IPersistFile>() else { return };
+            let path = HSTRING::from(link.as_os_str());
+            if pf.Load(&path, windows::Win32::System::Com::STGM_READWRITE).is_err() {
+                return;
+            }
+            if sl.GetHotkey().unwrap_or(0) != 0 {
+                let _ = sl.SetHotkey(0);
+                let _ = pf.Save(&path, true);
+            }
         }
     }
 
@@ -411,7 +452,7 @@ mod imp {
 
 #[cfg(windows)]
 pub use imp::{
-    create_shortcut, enable_dark_menus, open_with, open_with_apps, open_with_dialog, resolve_shortcut, set_menu_theme,
+    clear_shortcut_hotkey, create_shortcut, create_shortcut_with, enable_dark_menus, open_with, open_with_apps, open_with_dialog, resolve_shortcut, set_menu_theme,
     show_native_menu, system_prefers_dark,
 };
 
@@ -439,6 +480,10 @@ mod fallback {
     pub fn create_shortcut(_: &Path, _: &Path) -> Result<(), String> {
         Err("Not available on this platform.".into())
     }
+    pub fn create_shortcut_with(_: &Path, _: &Path, _: &str, _: u16) -> Result<(), String> {
+        Err("Not available on this platform.".into())
+    }
+    pub fn clear_shortcut_hotkey(_: &Path) {}
 }
 #[cfg(not(windows))]
 pub use fallback::*;

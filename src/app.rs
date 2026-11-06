@@ -31,6 +31,7 @@ mod palette;
 pub mod instance;
 mod menu;
 mod places;
+mod shortcuts;
 use places::build_places;
 pub mod selftest;
 pub use actions::external_drop;
@@ -430,7 +431,11 @@ pub fn install(ui: &MainWindow, start: Location, select: Option<String>) {
             finder_rs::core::default_explorer::repair(&exe);
             finder_rs::core::default_explorer::refresh_installed(&exe);
         }
+        if std::env::var_os("FINDER_SNAPSHOT").is_none() {
+            finder_rs::core::default_explorer::remove_background();
+        }
         app.update_explorer_catch();
+        commands::set_user_keys(&app.settings.shortcuts);
         let mut tab = app.make_tab(start);
         tab.pending_select = select;
         app.tabs.push(tab);
@@ -547,6 +552,15 @@ fn wire(ui: &MainWindow) {
     });
     b.on_settings_set(|key, value| {
         with_app(|a| a.settings_set(&key, value));
+    });
+    b.on_shortcut_record(|id, text, ctrl, alt, shift| {
+        with_app(|a| a.shortcut_record(&id, &text, ctrl, alt, shift));
+    });
+    b.on_shortcut_clear(|id| {
+        with_app(|a| a.shortcut_clear(&id));
+    });
+    b.on_shortcuts_reset(|| {
+        with_app(|a| a.shortcuts_reset());
     });
     b.on_preview_box(|w, h| {
         with_app(|a| a.preview_box(w, h));
@@ -888,6 +902,131 @@ fn folder_key(p: &std::path::Path) -> String {
 
 fn card_is_video(path: &std::path::Path) -> bool {
     preview::classify_path(path) == preview::Kind::Video
+}
+
+/// The window is hidden: started in the background at sign-in for the
+/// "open X Finder" key, or closed while that key is set.
+static HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Started hidden and not shown yet: still at its off-screen start spot.
+static UNPLACED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Closed (hidden) without "remember open tabs": the next folder opened
+/// replaces what was there instead of adding a tab.
+static FRESH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn take_fresh() -> bool {
+    FRESH.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn window_hidden() -> bool {
+    HIDDEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `X Finder.exe --hidden` (sign-in): the window starts off-screen and is
+/// hidden as soon as it exists.
+pub fn start_hidden(ui: &MainWindow) {
+    HIDDEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    UNPLACED.store(true, std::sync::atomic::Ordering::Relaxed);
+    FRESH.store(true, std::sync::atomic::Ordering::Relaxed);
+    // Slint shows the window once the event loop starts (after the first
+    // timers), so keep hiding it for the first moments, until it's shown
+    // on purpose.
+    for ms in [1u64, 50, 150, 300, 600, 1000, 2000] {
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(Duration::from_millis(ms), move || {
+            if window_hidden()
+                && let Some(ui) = weak.upgrade()
+            {
+                use slint::winit_030::WinitWindowAccessor;
+                ui.window().with_winit_window(|w| w.set_visible(false));
+            }
+        });
+    }
+}
+
+/// Close button while the "open X Finder" key is set: hide instead of
+/// quitting, so the key keeps working (Quit X Finder really quits).
+pub fn hide_to_background() -> bool {
+    with_app(|a| {
+        if a.settings.open_key.is_empty() {
+            return false;
+        }
+        let Some(ui) = a.ui() else { return false };
+        a.save_settings();
+        // Like quitting: the tabs go, unless they're to be remembered.
+        if !a.settings.restore_tabs {
+            while a.tabs.len() > 1 {
+                let last = a.tabs.len() - 1;
+                a.close_tab(if a.active == last { 0 } else { last });
+            }
+            FRESH.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        use slint::winit_030::WinitWindowAccessor;
+        ui.window().with_winit_window(|w| w.set_visible(false));
+        HIDDEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        true
+    })
+    .unwrap_or(false)
+}
+
+impl App {
+    /// One tab showing `loc` (the others closed), as if just started.
+    pub(super) fn start_over(&mut self, loc: Location, select: Option<String>) {
+        while self.tabs.len() > 1 {
+            let last = self.tabs.len() - 1;
+            self.close_tab(if self.active == last { 0 } else { last });
+        }
+        // A fresh history: Back doesn't lead to the closed session.
+        let tab = &mut self.tabs[self.active];
+        tab.history = vec![loc.clone()];
+        tab.hist_pos = 0;
+        tab.loc = loc.clone();
+        self.navigate(loc, select);
+    }
+
+    /// Shows the window (also when hidden in the background), restored and
+    /// focused.
+    pub(super) fn bring_to_front(&mut self) {
+        let Some(ui) = self.ui() else { return };
+        use slint::winit_030::WinitWindowAccessor;
+        if UNPLACED.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            restore_window(&ui);
+            // Off its hidden start spot: the saved place, or the middle of
+            // the screen.
+            let (x, y) = (self.settings.window_x, self.settings.window_y);
+            let saved = x != i32::MIN && sys::point_on_screen(x + 40, y + 20);
+            ui.window().with_winit_window(|w| {
+                use slint::winit_030::winit::dpi::PhysicalPosition;
+                if saved {
+                    w.set_outer_position(PhysicalPosition::new(x, y));
+                } else if let Some(m) = w.primary_monitor() {
+                    let (ms, mp, ws) = (m.size(), m.position(), w.outer_size());
+                    w.set_outer_position(PhysicalPosition::new(
+                        mp.x + (ms.width as i32 - ws.width as i32).max(0) / 2,
+                        mp.y + (ms.height as i32 - ws.height as i32).max(0) / 2,
+                    ));
+                }
+            });
+        }
+        if HIDDEN.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            ui.window().with_winit_window(|w| w.set_visible(true));
+            repaint_all();
+        }
+        ui.window().set_minimized(false);
+        ui.window().with_winit_window(|w| w.focus_window());
+    }
+}
+
+/// The display's scaling is known (once the window exists) or changed
+/// (moved to another monitor, Windows' scale setting): thumbnails and icons
+/// are made at the new pixel size, or they'd be stretched and blurry.
+pub fn scale_changed() {
+    with_app(|a| {
+        if let Some(ui) = a.ui() {
+            let size = ui.global::<Bridge>().get_icon_size();
+            a.icon_size_changed(size);
+        }
+    });
 }
 
 /// Redraws the whole window on the next frame, and once more a moment
@@ -1793,7 +1932,13 @@ impl App {
         {
             return true;
         }
-        if let Some(cmd) = commands::from_key(text, ctrl, alt, shift) {
+        let typing = !self.type_ahead.is_empty() && self.type_ahead_at.elapsed() <= TYPE_AHEAD_TIMEOUT;
+        // A space while typing a name is part of the name, not Quick Look.
+        if typing && text == " " && !ctrl && !alt {
+            self.type_to_select(' ');
+            return true;
+        }
+        if let Some(cmd) = commands::lookup(text, ctrl, alt, shift) {
             self.run(cmd);
             return true;
         }
@@ -1801,11 +1946,6 @@ impl App {
             let mut chars = text.chars();
             if let (Some(c), None) = (chars.next(), chars.next()) {
                 let special = c.is_control() || ('\u{F700}'..='\u{F8FF}').contains(&c);
-                let typing = !self.type_ahead.is_empty() && self.type_ahead_at.elapsed() <= TYPE_AHEAD_TIMEOUT;
-                if c == ' ' && !typing {
-                    self.run(Command::QuickLook);
-                    return true;
-                }
                 let space_ok = c != ' ' || typing;
                 if !special && space_ok {
                     self.type_to_select(c);
@@ -1857,6 +1997,21 @@ impl App {
             Command::ShowEnclosing => self.show_enclosing(),
             Command::Palette => self.palette_show(""),
             Command::GoTo => self.palette_show("cd "),
+            Command::Settings => self.settings_set("open", 1),
+            Command::Quit => {
+                let _ = slint::quit_event_loop();
+            }
+            Command::Search | Command::EditPath => {
+                if let Some(ui) = self.ui() {
+                    let b = ui.global::<Bridge>();
+                    if cmd == Command::Search {
+                        b.set_focus_search_serial(b.get_focus_search_serial() + 1);
+                    } else {
+                        b.set_edit_path_serial(b.get_edit_path_serial() + 1);
+                    }
+                }
+            }
+            Command::FolderSizes => self.toggle_folder_sizes(),
             Command::Help => {
                 if let Some(ui) = self.ui() {
                     ui.global::<Bridge>().set_help_open(true);

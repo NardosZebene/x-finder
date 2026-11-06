@@ -59,6 +59,8 @@ Press **Space** for **Quick Look**, or keep the preview pane open while you move
 - **Colour tags** – tag files and folders; tags travel with the file.
 - **Type to select** – type a name to jump to it; press the same letter again (h, h, h…) to cycle through matches.
 - **Open in VS Code** – right-click a folder or file (shown when VS Code is installed).
+- **Your own keyboard shortcuts** – give any action the key you like (Settings → Customize shortcuts),
+  plus one key that opens X Finder from anywhere, instantly (e.g. Ctrl+Alt+E).
 - **Light and dark mode**, with crisp, Windows-tuned text in dark mode.
 
 <img src="docs/screenshots/folder-sizes.png" alt="Folder sizes in Program Files">

@@ -13,6 +13,17 @@ fn main() -> Result<(), slint::PlatformError> {
     // Optional start folder: `finder-rs C:\some\folder` (also how Windows
     // opens folders when this is the default file explorer).
     let arg = std::env::args().nth(1).map(|a| a.trim().trim_matches('"').to_string());
+    // Started at sign-in for the "open X Finder" key: wait hidden.
+    let hidden = arg.as_deref() == Some("--hidden");
+    if hidden && app::instance::is_running() {
+        return Ok(());
+    }
+    let arg = arg.filter(|_| !hidden);
+    // Left in start-up by an earlier version's helper: nothing to open.
+    if arg.as_deref() == Some("--background") {
+        finder_rs::core::default_explorer::remove_background();
+        return Ok(());
+    }
     // Virtual folders (Control Panel, Recycle Bin, "shell:…") stay with Explorer.
     if let Some(a) = &arg
         && (a.starts_with("::") || a.to_lowercase().starts_with("shell:"))
@@ -42,15 +53,29 @@ fn main() -> Result<(), slint::PlatformError> {
     // Software rendering keeps idle RAM in the tens of MB (plan §1).
     // SLINT_BACKEND still wins if set.
     if std::env::var_os("SLINT_BACKEND").is_none() {
-        slint::BackendSelector::new().backend_name("winit".into()).renderer_name("software".into()).select()?;
+        let selector = slint::BackendSelector::new().backend_name("winit".into()).renderer_name("software".into());
+        // Hidden start: created off-screen, then hidden (see start_hidden).
+        let selector = if hidden {
+            selector.with_winit_window_attributes_hook(|a| {
+                a.with_position(slint::winit_030::winit::dpi::PhysicalPosition::new(-32000, -32000)).with_active(false)
+            })
+        } else {
+            selector
+        };
+        selector.select()?;
     }
 
     // Native Windows menus ("More Options…") follow the system dark mode.
     finder_rs::core::shellx::enable_dark_menus();
 
     let ui = MainWindow::new()?;
-    app::restore_window(&ui);
+    if !hidden {
+        app::restore_window(&ui);
+    }
     app::install(&ui, start, select);
+    if hidden {
+        app::start_hidden(&ui);
+    }
 
     // Files dragged in from Explorer or other apps.
     {
@@ -65,6 +90,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 WindowEvent::CloseRequested => {
                     app::remember_window(window);
                     app::stop_playback();
+                    // With an "open X Finder" key set, closing only hides.
+                    if app::hide_to_background() {
+                        return EventResult::PreventDefault;
+                    }
                 }
                 WindowEvent::Destroyed => app::stop_playback(),
                 // Back from Show Desktop / minimised / another app: draw
@@ -75,6 +104,9 @@ fn main() -> Result<(), slint::PlatformError> {
                     app::window_changed(window);
                 }
                 WindowEvent::Moved(_) => app::window_changed(window),
+                WindowEvent::ScaleFactorChanged { .. } => {
+                    slint::Timer::single_shot(std::time::Duration::from_millis(1), app::scale_changed);
+                }
                 _ => {}
             }
             EventResult::Propagate
@@ -83,6 +115,8 @@ fn main() -> Result<(), slint::PlatformError> {
     // Once the window exists: light/dark for the app, title bar and menus.
     app::apply_appearance();
     slint::Timer::single_shot(std::time::Duration::from_millis(1), app::apply_appearance);
+    // The real display scaling is only known once the window exists.
+    slint::Timer::single_shot(std::time::Duration::from_millis(1), app::scale_changed);
 
     // Taskbar / Alt+Tab icon from the exe's icon resource (all sizes).
     #[cfg(windows)]

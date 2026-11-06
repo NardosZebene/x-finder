@@ -700,7 +700,7 @@ impl App {
     }
 
     /// Where the "X Finder" shortcuts go: the Desktop and the Start menu.
-    fn app_shortcut_paths() -> Vec<PathBuf> {
+    pub(super) fn app_shortcut_paths() -> Vec<PathBuf> {
         let mut out = Vec::new();
         if let Some(d) = finder_rs::core::sys::known_folder(finder_rs::core::sys::KnownFolder::Desktop) {
             out.push(d.join("X Finder.lnk"));
@@ -900,10 +900,13 @@ impl App {
             "open" => {
                 self.menu_close();
                 self.sync_settings_ui();
+                self.sync_shortcuts();
                 b.set_settings_open(true);
                 return;
             }
             "close" => {
+                self.stop_recording();
+                b.set_shortcuts_open(false);
                 b.set_settings_open(false);
                 ui.invoke_focus_list();
                 return;
@@ -1012,5 +1015,8 @@ pub fn apply_appearance() {
 
 /// Saves settings when the window closes.
 pub fn shutdown() {
-    with_app(|a| a.save_settings());
+    with_app(|a| {
+        a.save_settings();
+        a.release_open_key();
+    });
 }

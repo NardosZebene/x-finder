@@ -1,7 +1,7 @@
 // The only connection between UI and Rust. The UI reads state from these
 // properties and reports user intent through the callbacks; it never touches
 // the disk itself (plan §4).
-import { PaletteItem, CodeLine, FileRow, Crumb, SidebarItem, TabItem, SlotData, PaneData, PreviewInfo, DocBlock, TableRow, StripItem, MenuEntry, PcCard } from "types.slint";
+import { PaletteItem, CodeLine, FileRow, Crumb, SidebarItem, TabItem, SlotData, PaneData, PreviewInfo, DocBlock, TableRow, StripItem, MenuEntry, PcCard, ShortcutRow } from "types.slint";
 
 export global Bridge {
     // Current folder
@@ -166,6 +166,20 @@ export global Bridge {
     in property <bool> set-restore-tabs;
     in property <bool> set-default-explorer;
     in property <bool> set-app-shortcuts;
+    // Keyboard shortcuts: every action with its key; "open" = the key that
+    // opens X Finder from anywhere. `shortcut-recording` is the action
+    // waiting for its new key ("" = none).
+    in property <[ShortcutRow]> shortcuts;
+    in property <string> open-key;
+    in-out property <string> shortcut-recording;
+    // The keyboard shortcuts window (over Settings).
+    in-out property <bool> shortcuts-open;
+    callback shortcut-record(id: string, text: string, ctrl: bool, alt: bool, shift: bool);
+    callback shortcut-clear(id: string);
+    callback shortcuts-reset();
+    // Bumped by Rust to focus the search box / start typing a path.
+    in property <int> focus-search-serial;
+    in property <int> edit-path-serial;
 
     // This PC page
     in property <bool> at-computer;

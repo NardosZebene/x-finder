@@ -82,6 +82,9 @@ pub struct Settings {
     pub folders_first: bool,
     /// Every other row in lists is shaded.
     pub striped_rows: bool,
+    /// Key that opens X Finder from anywhere (set on its Start menu
+    /// shortcut, so it works while the app is closed); "" = none.
+    pub open_key: String,
     /// Times the app was started (the default-explorer banner waits a bit).
     pub launches: u32,
     /// "Don't ask again" on the default-explorer banner.
@@ -112,6 +115,9 @@ pub struct Settings {
     /// Sort and view chosen in each folder (lower-cased path → choice),
     /// like Explorer remembers them.
     pub folder_views: std::collections::BTreeMap<String, FolderView>,
+    /// Keys chosen in Settings → Keyboard shortcuts (action id → key,
+    /// "" = no key); actions not listed keep their built-in key.
+    pub shortcuts: std::collections::BTreeMap<String, String>,
     /// Commands saved in the palette (`save ip = !ipconfig`).
     /// Arrays of tables stay last: TOML writes them after plain values.
     pub saved_commands: Vec<SavedCommand>,
@@ -199,6 +205,7 @@ impl Default for Settings {
             show_folder_sizes: false,
             folders_first: true,
             striped_rows: true,
+            open_key: String::new(),
             launches: 0,
             explorer_ask_never: false,
             explorer_not_now: 0,
@@ -215,6 +222,7 @@ impl Default for Settings {
             restore_tabs: false,
             last_tabs: None,
             folder_views: Default::default(),
+            shortcuts: Default::default(),
             saved_commands: Vec::new(),
             tab_groups: Vec::new(),
         }

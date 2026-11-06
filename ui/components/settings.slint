@@ -3,6 +3,7 @@ import { Theme } from "../theme.slint";
 import { Bridge } from "../bridge.slint";
 import { ScrollView } from "std-widgets.slint";
 import { FolderIcon } from "folder-icon.slint";
+import { ShortcutLine } from "shortcuts.slint";
 
 component Segmented inherits Rectangle {
     in property <[string]> options;
@@ -272,6 +273,39 @@ export component SettingsDialog inherits Rectangle {
                         label: "Column view shows the full path from the drive";
                         on: Bridge.columns-absolute;
                         toggled => { Bridge.settings-set("columns-full", Bridge.columns-absolute ? 0 : 1); }
+                    }
+                }
+
+                Section {
+                    title: "Keyboard shortcuts";
+                    ShortcutLine {
+                        id: "open";
+                        title: "Open X Finder from anywhere";
+                        key: Bridge.open-key;
+                        custom: Bridge.open-key != "";
+                    }
+                    Text {
+                        text: "Instant, like Win+E: X Finder then waits in the background from sign-in, and closing the window keeps it there (Quit X Finder in the command palette really quits). Any key with Ctrl or Alt, e.g. Ctrl+Alt+E or Ctrl+Alt+Space.";
+                        wrap: word-wrap;
+                        font-size: Theme.font-label;
+                        color: Theme.text-tertiary;
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: keys-open-label.preferred-width + 24px;
+                            height: 30px;
+                            border-radius: Theme.r-control;
+                            background: keys-open-ta.pressed ? Theme.pressed : keys-open-ta.has-hover ? Theme.hover : Theme.field;
+                            keys-open-label := Text {
+                                text: "Customize shortcuts…";
+                                font-size: Theme.font-small;
+                                color: Theme.text;
+                            }
+                            keys-open-ta := TouchArea {
+                                clicked => { Bridge.shortcuts-open = true; }
+                            }
+                        }
                     }
                 }
 

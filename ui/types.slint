@@ -1,5 +1,14 @@
 // Data passed from Rust to the UI.
 
+// One action in Settings → Keyboard shortcuts.
+export struct ShortcutRow {
+    id: string,
+    title: string,
+    key: string,
+    // Not the built-in key.
+    custom: bool,
+}
+
 export struct FileRow {
     name: string,
     kind: string,

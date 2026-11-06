@@ -1,0 +1,190 @@
+import { SlimScroll } from "controls.slint";
+import { Theme } from "../theme.slint";
+import { Bridge } from "../bridge.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// A shortcut key box: click it, then press the new keys (Esc cancels).
+component KeyButton inherits Rectangle {
+    in property <string> id;
+    in property <string> key;
+    in property <bool> custom;
+    property <bool> recording: Bridge.shortcut-recording == root.id;
+    width: max(118px, label.preferred-width + 24px);
+    height: 26px;
+    border-radius: Theme.r-control;
+    background: root.recording ? Theme.accent : ta.has-hover ? Theme.hover : Theme.field;
+    border-width: 1px;
+    border-color: root.recording ? Theme.accent : Theme.border;
+    label := Text {
+        text: root.recording ? "Press keys…" : root.key == "" ? "None" : root.key;
+        font-size: Theme.font-small;
+        font-weight: root.custom && !root.recording ? 600 : 400;
+        color: root.recording ? #ffffff : root.key == "" ? Theme.text-tertiary : Theme.text;
+    }
+    ta := TouchArea {
+        clicked => {
+            Bridge.shortcut-recording = root.id;
+            keys.focus();
+        }
+    }
+    keys := FocusScope {
+        width: 0px;
+        height: 0px;
+        key-pressed(e) => {
+            if !root.recording {
+                return reject;
+            }
+            if e.text == Key.Escape {
+                Bridge.shortcut-recording = "";
+                return accept;
+            }
+            Bridge.shortcut-record(root.id, e.text, e.modifiers.control, e.modifiers.alt, e.modifiers.shift);
+            return accept;
+        }
+    }
+}
+
+export component ShortcutLine inherits HorizontalLayout {
+    in property <string> id;
+    in property <string> title;
+    in property <string> key;
+    in property <bool> custom;
+    spacing: 8px;
+    Text {
+        horizontal-stretch: 1;
+        text: root.title;
+        vertical-alignment: center;
+        overflow: elide;
+        color: Theme.text;
+    }
+    KeyButton {
+        id: root.id;
+        key: root.key;
+        custom: root.custom;
+    }
+    Rectangle {
+        width: 22px;
+        height: 26px;
+        border-radius: 11px;
+        background: clear-ta.has-hover && root.key != "" ? Theme.hover : transparent;
+        Text {
+            text: root.key != "" ? "×" : "";
+            font-size: 15px;
+            color: Theme.text-tertiary;
+        }
+        clear-ta := TouchArea {
+            enabled: root.key != "";
+            clicked => { Bridge.shortcut-clear(root.id); }
+        }
+    }
+}
+
+
+// Keyboard shortcuts window (Settings > Customize shortcuts): every action
+// with its key.
+export component ShortcutsDialog inherits Rectangle {
+    background: #00000066;
+    TouchArea {
+        clicked => {
+            Bridge.shortcut-recording = "";
+            Bridge.shortcuts-open = false;
+        }
+    }
+    Rectangle {
+        width: min(500px, parent.width - 48px);
+        height: min(680px, parent.height - 40px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.r-panel;
+        background: Theme.window;
+        border-width: 1px;
+        border-color: Theme.menu-border;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #00000070;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            padding: 24px;
+            padding-bottom: 18px;
+            spacing: 12px;
+            Text {
+                text: "Keyboard shortcuts";
+                font-size: 20px;
+                font-weight: 650;
+                color: Theme.text;
+            }
+            Text {
+                text: "Click a key, then press the keys you want. Esc cancels, × removes it. A key already used by another action moves to this one.";
+                wrap: word-wrap;
+                font-size: Theme.font-label;
+                color: Theme.text-tertiary;
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                list := ScrollView {
+                    width: parent.width;
+                    height: parent.height;
+                    vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                    content-width: self.visible-width;
+                    content-height: rows.preferred-height;
+                    rows := VerticalLayout {
+                        width: parent.width;
+                        padding-left: 3px;
+                        padding-right: 14px;
+                        spacing: 6px;
+                        for row in Bridge.shortcuts: ShortcutLine {
+                            id: row.id;
+                            title: row.title;
+                            key: row.key;
+                            custom: row.custom;
+                        }
+                    }
+                }
+                SlimScroll {
+                    x: parent.width - self.width - 1px;
+                    y: 0px;
+                    height: parent.height;
+                    content-y <=> list.content-y;
+                    content-height: list.content-height;
+                    visible-height: list.visible-height;
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Rectangle {
+                    width: reset-label.preferred-width + 24px;
+                    height: 30px;
+                    border-radius: Theme.r-control;
+                    background: reset-ta.pressed ? Theme.pressed : Theme.field;
+                    reset-label := Text {
+                        text: "Reset all shortcuts";
+                        font-size: Theme.font-small;
+                        color: Theme.text;
+                    }
+                    reset-ta := TouchArea {
+                        clicked => { Bridge.shortcuts-reset(); }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: done-label.preferred-width + 32px;
+                    height: 30px;
+                    border-radius: Theme.r-control;
+                    background: done-ta.pressed ? Theme.selection : Theme.accent;
+                    done-label := Text {
+                        text: "Done";
+                        font-size: Theme.font-small;
+                        font-weight: 600;
+                        color: #ffffff;
+                    }
+                    done-ta := TouchArea {
+                        clicked => {
+                            Bridge.shortcut-recording = "";
+                            Bridge.shortcuts-open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
