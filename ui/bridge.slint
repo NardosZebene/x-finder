@@ -289,6 +289,8 @@ export global Bridge {
     callback palette-show(prefill: string);
     callback palette-changed(text: string);
     callback palette-run(index: int);
+    // Ctrl+Enter: show a file in its folder instead of opening it.
+    callback palette-reveal(index: int);
     // Up / Down through earlier commands; false when there is nothing to show.
     callback palette-history(older: bool) -> bool;
     in property <bool> palette-browsing;

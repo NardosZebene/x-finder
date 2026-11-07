@@ -67,7 +67,7 @@ Press **Space** for **Quick Look**, or keep the preview pane open while you move
 
 ### Command palette (Ctrl+Shift+P)
 
-Type commands instead of clicking through menus:
+Type commands instead of clicking through menus, jump to folders and files you used before, and press ↑ for earlier commands:
 
 ```text
 mkdir invoices, receipts          create folders
@@ -83,6 +83,7 @@ view icons all                    set the view for this folder and every subfold
 save st = !git status             save it as a short command (then just type: st)
 1.5gb in mb   15% of 80   2+3*4   built-in calculator (Enter copies the answer)
 select *.pdf; move to PDFs        chain commands with ; (they run in order)
+naro                              find a file you opened before (Ctrl+Enter shows it in its folder)
 ```
 
 <img src="docs/screenshots/palette-git.png" alt="Running git log from the command palette" width="49%"> <img src="docs/screenshots/batch-rename.png" alt="Batch rename with a preview" width="49%">

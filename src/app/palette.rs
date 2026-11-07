@@ -29,12 +29,16 @@ const RECENT_MAX: usize = 60;
 const MAX_ROWS: usize = 9;
 /// Commands kept for the Up arrow.
 const HISTORY_MAX: usize = 100;
+/// Recently opened files the palette remembers.
+const FILES_MAX: usize = 500;
 
 thread_local! {
     /// Where Up / Down is in the history (`None`: not going through it).
     static HISTORY_POS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     /// What was typed before going through the history (Down past the newest restores it).
     static HISTORY_DRAFT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    /// Windows' own Recent files (also those opened from other apps), and when they were read.
+    static WIN_RECENT: std::cell::RefCell<(Vec<PathBuf>, Option<std::time::Instant>)> = const { std::cell::RefCell::new((Vec::new(), None)) };
 }
 
 #[derive(Clone)]
@@ -51,6 +55,8 @@ pub(super) enum PAction {
     Fill(String),
     /// Copies this text (a calculation's answer).
     Copy(String),
+    /// Opens a recently used file (Ctrl+Enter: shows it in its folder).
+    OpenFile(PathBuf),
 }
 
 /// A `!command` running with its output shown in the palette.
@@ -385,6 +391,8 @@ impl App {
         b.set_palette_open(true);
         HISTORY_POS.with(|h| h.set(None));
         b.set_palette_browsing(false);
+        self.absorb_opened();
+        refresh_win_recent();
         b.set_palette_fill_serial(b.get_palette_fill_serial() + 1);
         self.palette_changed(prefill);
     }
@@ -408,6 +416,66 @@ impl App {
         self.settings.recent_folders.retain(|x| !x.eq_ignore_ascii_case(&s));
         self.settings.recent_folders.insert(0, s);
         self.settings.recent_folders.truncate(RECENT_MAX);
+    }
+
+    /// Moves files opened since the last look to the front of the recent files.
+    pub(super) fn absorb_opened(&mut self) {
+        for p in super::take_opened() {
+            self.remember_file(&p);
+        }
+    }
+
+    fn remember_file(&mut self, p: &Path) {
+        let s = p.to_string_lossy().into_owned();
+        let list = &mut self.settings.recent_files;
+        list.retain(|x| !x.eq_ignore_ascii_case(&s));
+        list.insert(0, s);
+        list.truncate(FILES_MAX);
+    }
+
+    /// Recently opened files whose name (or path) matches, best first: the
+    /// ones opened in X Finder, then Windows' Recent list.
+    fn file_matches(&self, needle: &str, limit: usize) -> Vec<(i32, PathBuf)> {
+        let mut seen = std::collections::HashSet::new();
+        let ours = self.settings.recent_files.iter().map(PathBuf::from);
+        let windows = WIN_RECENT.with(|w| w.borrow().0.clone());
+        let mut found: Vec<(i32, PathBuf)> = ours
+            .chain(windows)
+            .enumerate()
+            .filter(|(_, p)| seen.insert(p.to_string_lossy().to_lowercase()))
+            .filter_map(|(rank, p)| {
+                let name = p.file_name()?.to_string_lossy().into_owned();
+                let by_name = score(&name, needle).map(|s| s + 100);
+                let by_path = if needle.is_empty() { None } else { score(&p.to_string_lossy(), needle) };
+                by_name.max(by_path).map(|s| (s - (rank as i32).min(200), p))
+            })
+            .collect();
+        found.sort_by(|a, b| b.0.cmp(&a.0));
+        // Only files that are still there.
+        found.into_iter().filter(|(_, p)| p.is_file()).take(limit).collect()
+    }
+
+    fn file_item(&self, p: &Path) -> PaletteItem {
+        PaletteItem {
+            title: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default().into(),
+            detail: p.parent().map(|d| d.display().to_string()).unwrap_or_default().into(),
+            shortcut: "".into(),
+            icon: "documents".into(),
+        }
+    }
+
+    /// Ctrl+Enter: a file is shown in its folder instead of opened.
+    pub(super) fn palette_reveal(&mut self, index: usize) {
+        match self.palette_actions.get(index).cloned() {
+            Some(PAction::OpenFile(p)) => {
+                self.palette_close();
+                self.remember_file(&p);
+                let parent = p.parent().map(Path::to_path_buf).unwrap_or_else(|| p.clone());
+                let name = p.file_name().map(|n| n.to_string_lossy().into_owned());
+                self.navigate(Location::Dir(parent), name);
+            }
+            _ => self.palette_run(index),
+        }
     }
 
     /// Candidate folders for quick jump: visited, favourites, drives.
@@ -473,6 +541,9 @@ impl App {
             ));
             for (_, p) in self.folder_matches("", 4) {
                 rows.push((item(self.loc_title(&Location::Dir(p.clone())), p.display().to_string(), "", "folder"), PAction::Goto(p)));
+            }
+            for p in self.settings.recent_files.iter().map(PathBuf::from).filter(|p| p.is_file()).take(3) {
+                rows.push((self.file_item(&p), PAction::OpenFile(p)));
             }
         } else if let Some(parts) = chain_parts(t) {
             rows.push((
@@ -610,6 +681,9 @@ impl App {
             for (s, p) in self.folder_matches(t, MAX_ROWS) {
                 scored.push((s, item(self.loc_title(&Location::Dir(p.clone())), p.display().to_string(), "", "folder"), PAction::Goto(p)));
             }
+            for (s, p) in self.file_matches(t, MAX_ROWS) {
+                scored.push((s, self.file_item(&p), PAction::OpenFile(p)));
+            }
             // A typed path that exists: go straight there.
             if let Some(Location::Dir(p)) = location::parse_user_input(t)
                 && p.is_dir()
@@ -726,6 +800,11 @@ impl App {
             PAction::Goto(p) => {
                 self.palette_close();
                 self.navigate(Location::Dir(p), None);
+            }
+            PAction::OpenFile(p) => {
+                self.palette_close();
+                super::open_file(p);
+                self.absorb_opened();
             }
             PAction::Special(id) => {
                 self.palette_close();
@@ -1249,6 +1328,22 @@ impl App {
 thread_local! {
     /// Commands still to run from a "a; b; c" line.
     static CHAIN: std::cell::RefCell<std::collections::VecDeque<String>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+/// Reads Windows' Recent files in the background (at most once a minute).
+fn refresh_win_recent() {
+    let fresh = WIN_RECENT.with(|w| w.borrow().1.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(60)));
+    if fresh {
+        return;
+    }
+    WIN_RECENT.with(|w| w.borrow_mut().1 = Some(std::time::Instant::now()));
+    std::thread::spawn(|| {
+        finder_rs::core::shell::init_thread(true);
+        let files: Vec<PathBuf> = finder_rs::core::shellx::recent_files(300).into_iter().map(|(p, _)| p).collect();
+        let _ = slint::invoke_from_event_loop(move || {
+            WIN_RECENT.with(|w| w.borrow_mut().0 = files);
+        });
+    });
 }
 
 /// "select *.pdf; move to PDFs" -> its commands. `None` for a single command,

@@ -994,6 +994,7 @@ impl App {
 
     /// Collects settings that live in the UI and writes the settings file.
     pub(super) fn save_settings(&mut self) {
+        self.absorb_opened();
         if let Some(ui) = self.ui() {
             let b = ui.global::<Bridge>();
             self.settings.show_hidden = self.opts.show_hidden;

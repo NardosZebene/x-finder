@@ -59,6 +59,10 @@ export component CommandPalette inherits Rectangle {
                         Bridge.palette-index = Math.max(0, Bridge.palette-index - 1);
                         return accept;
                     }
+                    if e.text == Key.Return && e.modifiers.control && !e.modifiers.shift {
+                        Bridge.palette-reveal(Bridge.palette-index);
+                        return accept;
+                    }
                     // Ctrl+Shift+C: copy a command's output.
                     if e.modifiers.control && e.modifiers.shift && (e.text == "c" || e.text == "C") && Bridge.palette-output != "" {
                         Bridge.palette-copy-output();

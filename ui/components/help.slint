@@ -197,6 +197,7 @@ export component HelpDialog inherits Rectangle {
                             Row { keys: "{n} {nn} {nnn} {name} {ext} {date}"; text: "Rename template parts: number (zero-padded), old name, extension, date modified."; }
                             Row { keys: "copy to D:\\backup"; text: "Copy the selected items there (the folder is created if needed)."; }
                             Row { keys: "move to D:\\backup"; text: "Move the selected items there."; }
+                            Row { keys: "Recent files"; text: "Type part of a file's name to find files you opened before (in X Finder or other apps). Enter opens it, Ctrl+Enter shows it in its folder."; }
                             Row { keys: "↑   ↓"; text: "In the palette: go through the commands you typed before (↑ on the first row). Earlier commands that match what you type are suggested under it."; }
                             Row { keys: "select *.pdf; move to PDFs"; text: "Chain commands with ; and they run in order (each waits for the one before). E.g. mkdir Work; select *.jpg; copy to Work; cd Work."; }
                             Row { keys: "zip archive.zip"; text: "Zip the selected items into this folder."; }

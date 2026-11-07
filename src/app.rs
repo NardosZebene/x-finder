@@ -116,6 +116,8 @@ thread_local! {
     static APP: RefCell<Option<App>> = const { RefCell::new(None) };
     /// Selection when a Ctrl+drag-select box started (the box flips items on top of it).
     static BAND_BASE: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+    /// Files opened since the palette last looked (added to its recent files).
+    static OPENED: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Runs `f` with the app state. Returns `None` if the app isn't set up or the
@@ -744,6 +746,9 @@ fn wire(ui: &MainWindow) {
     b.on_palette_history(|older| with_app(|a| a.palette_history(older)).unwrap_or(false));
     b.on_palette_run(|i| {
         with_app(|a| a.palette_run(i.max(0) as usize));
+    });
+    b.on_palette_reveal(|i| {
+        with_app(|a| a.palette_reveal(i.max(0) as usize));
     });
     b.on_palette_copy_output(|| {
         with_app(|a| a.palette_copy_output());
@@ -2931,8 +2936,14 @@ fn double_click_time() -> Duration {
     Duration::from_millis(ms.clamp(200, 900) as u64)
 }
 
+/// Files opened since the last call, oldest first.
+pub(crate) fn take_opened() -> Vec<PathBuf> {
+    OPENED.with(|o| std::mem::take(&mut *o.borrow_mut()))
+}
+
 /// Opens a file in its default app on a worker thread; errors go to the status bar.
-fn open_file(path: PathBuf) {
+pub(crate) fn open_file(path: PathBuf) {
+    OPENED.with(|o| o.borrow_mut().push(path.clone()));
     std::thread::spawn(move || {
         if let Err(msg) = sys::shell_open(&path) {
             let _ = slint::invoke_from_event_loop(move || {

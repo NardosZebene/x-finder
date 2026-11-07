@@ -110,6 +110,8 @@ pub struct Settings {
     pub recent_folders: Vec<String>,
     /// Commands typed in the palette, most recent first (Up arrow).
     pub command_history: Vec<String>,
+    /// Files opened from X Finder, most recent first (found by the palette).
+    pub recent_files: Vec<String>,
     /// Reopen the tabs that were open when the window closed.
     pub restore_tabs: bool,
     /// Those tabs (written while `restore_tabs` is on).
@@ -222,6 +224,7 @@ impl Default for Settings {
             window_ph: 0,
             recent_folders: Vec::new(),
             command_history: Vec::new(),
+            recent_files: Vec::new(),
             restore_tabs: false,
             last_tabs: None,
             folder_views: Default::default(),
