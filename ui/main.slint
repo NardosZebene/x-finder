@@ -214,18 +214,77 @@ export component MainWindow inherits Window {
                                     min-width: 260px;
                                     // Small split panes: never taller than their slot.
                                     min-height: 0px;
-                                    // Empty space: left-click clears the selection,
-                                    // right-click opens the folder menu.
-                                    TouchArea {
+                                    // Empty space: left-click clears the selection
+                                    // (drag to select with a box), right-click
+                                    // opens the folder menu.
+                                    band-ta := TouchArea {
+                                        // Box start in content coordinates.
+                                        in-out property <length> sx;
+                                        in-out property <length> sy;
+                                        in-out property <bool> armed;
+                                        in-out property <bool> dragging;
+                                        in-out property <bool> ctrl;
+                                        // Rows start below the list header; content scrolls.
+                                        out property <length> top: Bridge.view-mode == 0 ? files.rows-top : 0px;
+                                        out property <length> scroll: Bridge.view-mode == 0 ? files.scroll-y : grid.scroll-y;
+                                        // Current point, kept inside the view.
+                                        out property <length> mx: max(0px, min(self.width - 1px, self.mouse-x));
+                                        out property <length> my: max(self.top, min(self.height - 1px, self.mouse-y));
+                                        public function update() {
+                                            let cx = self.mx;
+                                            let cy = self.my - self.top - self.scroll;
+                                            if !self.dragging && abs(cx - self.sx) + abs(cy - self.sy) > 5px {
+                                                self.dragging = true;
+                                                Bridge.band-start(self.ctrl);
+                                            }
+                                            if self.dragging {
+                                                if Bridge.view-mode == 0 {
+                                                    Bridge.band-select(min(self.sx, cx), min(self.sy, cy), max(self.sx, cx), max(self.sy, cy), 1, 100000px, Theme.row-height, 0px);
+                                                } else {
+                                                    Bridge.band-select(min(self.sx, cx), min(self.sy, cy), max(self.sx, cx), max(self.sy, cy), grid.cols, Theme.tile-width, Theme.tile-height, grid.pad);
+                                                }
+                                            }
+                                        }
                                         pointer-event(e) => {
                                             if e.kind == PointerEventKind.down {
                                                 fs.focus();
                                                 if e.button == PointerEventButton.right {
                                                     Bridge.background-context(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
                                                 } else if e.button == PointerEventButton.left {
-                                                    Bridge.background-click();
+                                                    self.ctrl = e.modifiers.control;
+                                                    if !self.ctrl {
+                                                        Bridge.background-click();
+                                                    }
+                                                    self.armed = (Bridge.view-mode == 0 || Bridge.view-mode == 1) && !Bridge.at-computer && self.mouse-y >= self.top;
+                                                    self.dragging = false;
+                                                    self.sx = self.mx;
+                                                    self.sy = self.my - self.top - self.scroll;
                                                 }
+                                            } else if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                                                if self.dragging {
+                                                    Bridge.band-end();
+                                                }
+                                                self.armed = false;
+                                                self.dragging = false;
                                             }
+                                        }
+                                        moved => {
+                                            if self.armed && self.pressed {
+                                                self.update();
+                                            }
+                                        }
+                                    }
+                                    // Past the top or bottom edge while dragging: scroll.
+                                    Timer {
+                                        interval: 30ms;
+                                        running: band-ta.dragging && (band-ta.mouse-y < band-ta.top || band-ta.mouse-y > band-ta.height);
+                                        triggered => {
+                                            if Bridge.view-mode == 0 {
+                                                files.scroll-by(band-ta.mouse-y < band-ta.top ? max(-60px, band-ta.mouse-y - band-ta.top) : min(60px, band-ta.mouse-y - band-ta.height));
+                                            } else {
+                                                grid.scroll-by(band-ta.mouse-y < band-ta.top ? max(-60px, band-ta.mouse-y - band-ta.top) : min(60px, band-ta.mouse-y - band-ta.height));
+                                            }
+                                            band-ta.update();
                                         }
                                     }
                                     // Drop files on empty space to put them in this folder.
@@ -260,6 +319,15 @@ export component MainWindow inherits Window {
                                         focus-requested => { fs.focus(); }
                                     }
                                     if Bridge.at-computer: ComputerView { }
+                                    if band-ta.dragging: Rectangle {
+                                        x: min(band-ta.sx, band-ta.mx);
+                                        y: min(band-ta.sy + band-ta.top + band-ta.scroll, band-ta.my);
+                                        width: abs(band-ta.mx - band-ta.sx);
+                                        height: abs(band-ta.my - (band-ta.sy + band-ta.top + band-ta.scroll));
+                                        background: Theme.accent.with-alpha(0.16);
+                                        border-width: 1px;
+                                        border-color: Theme.accent.with-alpha(0.8);
+                                    }
                                     if Bridge.files.length == 0 && !Bridge.loading && !Bridge.at-computer && Bridge.view-mode != 2 && Bridge.view-mode != 3: Text {
                                         y: 28px;
                                         height: parent.height - 28px;

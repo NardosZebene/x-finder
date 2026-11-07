@@ -134,7 +134,13 @@ export component IconGrid inherits Rectangle {
     in property <bool> focused;
     callback focus-requested();
 
-    property <length> pad: 12px;
+    out property <length> pad: 12px;
+    // Drag-select box: scroll offset, and scrolling while dragging past an edge.
+    out property <length> scroll-y: list.content-y;
+    public function scroll-by(d: length) {
+        list.content-y = min(0px, max(list.visible-height - list.content-height, list.content-y - d));
+    }
+
     // Tell Rust when the icon size changes so thumbnails are fetched at the new size.
     property <float> size: Bridge.icon-size;
     changed size => {

@@ -261,6 +261,87 @@ mod imp {
         }
     }
 
+    /// One Properties window for several items (sizes added up, like
+    /// Explorer's "23 Files, 0 Folders").
+    pub fn show_properties_many(paths: &[PathBuf]) {
+        use windows::Win32::System::Com::{CoTaskMemFree, IDataObject};
+        use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+        use windows::Win32::UI::Shell::{
+            BHID_DataObject, IShellItemArray, SHCreateShellItemArrayFromIDLists, SHMultiFileProperties, SHParseDisplayName,
+        };
+        if paths.len() == 1 {
+            return show_properties(&paths[0]);
+        }
+        // SAFETY: PIDLs come from SHParseDisplayName and are freed below.
+        unsafe {
+            let mut pidls: Vec<*mut ITEMIDLIST> = Vec::new();
+            for p in paths {
+                let mut pidl: *mut ITEMIDLIST = std::ptr::null_mut();
+                if SHParseDisplayName(&HSTRING::from(p.as_os_str()), None, &mut pidl, 0, None).is_ok() && !pidl.is_null() {
+                    pidls.push(pidl);
+                }
+            }
+            if !pidls.is_empty() {
+                let list: Vec<*const ITEMIDLIST> = pidls.iter().map(|p| *p as *const _).collect();
+                let data: windows::core::Result<IDataObject> = SHCreateShellItemArrayFromIDLists(&list)
+                    .and_then(|arr: IShellItemArray| arr.BindToHandler(None, &BHID_DataObject));
+                if let Ok(data) = data {
+                    let _ = SHMultiFileProperties(&data, 0);
+                }
+            }
+            for p in pidls {
+                CoTaskMemFree(Some(p as *const _));
+            }
+        }
+    }
+
+    /// Runs this thread's window messages until the dialogs it opened
+    /// (Properties) are closed. The multi-item Properties window lives on
+    /// the calling thread and needs this to appear at all.
+    pub fn run_dialogs() {
+        use windows::Win32::Foundation::{HWND, LPARAM};
+        use windows::Win32::System::Threading::GetCurrentThreadId;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            DispatchMessageW, EnumThreadWindows, MSG, PM_REMOVE, PeekMessageW, TranslateMessage,
+        };
+        unsafe extern "system" fn count(h: HWND, l: LPARAM) -> windows::core::BOOL {
+            // Only real windows: COM keeps a hidden one on STA threads.
+            // SAFETY: l points at the counter below.
+            if unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(h) }.as_bool() {
+                unsafe { *(l.0 as *mut u32) += 1 };
+            }
+            true.into()
+        }
+        let start = std::time::Instant::now();
+        loop {
+            // SAFETY: standard message loop on this thread.
+            unsafe {
+                let mut m = MSG::default();
+                while PeekMessageW(&mut m, None, 0, 0, PM_REMOVE).as_bool() {
+                    let _ = TranslateMessage(&m);
+                    DispatchMessageW(&m);
+                }
+                let mut n = 0u32;
+                let _ = EnumThreadWindows(GetCurrentThreadId(), Some(count), LPARAM(&mut n as *mut u32 as isize));
+                let waited = start.elapsed();
+                // The single-item dialog runs on a shell thread: keep this
+                // one alive a while for it; otherwise stop once ours close.
+                if (n == 0 && waited > std::time::Duration::from_secs(600))
+                    || (n == 0 && waited > std::time::Duration::from_secs(5) && SEEN.with(|s| s.get()))
+                {
+                    return;
+                }
+                if n > 0 {
+                    SEEN.with(|s| s.set(true));
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+    }
+    thread_local! {
+        static SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
     /// (ctrl, shift) currently held — used to pick copy vs move on drop.
     pub fn modifiers() -> (bool, bool) {
         // SAFETY: plain state query.
@@ -271,7 +352,7 @@ mod imp {
 }
 
 #[cfg(windows)]
-pub use imp::{clipboard_files, modifiers, run, set_clipboard_files, set_clipboard_text, show_properties};
+pub use imp::{clipboard_files, modifiers, run, set_clipboard_files, set_clipboard_text, run_dialogs, show_properties, show_properties_many};
 
 #[cfg(not(windows))]
 mod fallback {
@@ -295,6 +376,8 @@ mod fallback {
         Err("Not supported on this platform yet.".into())
     }
     pub fn show_properties(_: &Path) {}
+    pub fn show_properties_many(_: &[PathBuf]) {}
+    pub fn run_dialogs() {}
     pub fn modifiers() -> (bool, bool) {
         (false, false)
     }

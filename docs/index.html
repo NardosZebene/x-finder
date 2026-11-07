@@ -38,7 +38,7 @@
   "operatingSystem": "Windows 10, Windows 11",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "downloadUrl": "https://github.com/NardosZebene/x-finder/releases/latest",
-  "softwareVersion": "1.1",
+  "softwareVersion": "1.2",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
   "isAccessibleForFree": true,
   "screenshot": "https://nardoszebene.github.io/x-finder/screenshots/hero-dark.png",
@@ -293,7 +293,7 @@ footer .flinks { display: flex; gap: 22px; }
 
 <header class="hero" id="top">
   <div class="wrap">
-    <div class="pill"><b>New in 1.1</b> Your own keyboard shortcuts · instant open key</div>
+    <div class="pill"><b>New in 1.2</b> Ctrl+Z undo · drag to select · command chains</div>
     <h1><span class="grad">The file explorer Windows was missing.</span></h1>
     <p class="lead">X Finder is a fast, free, open-source file manager for Windows 10 and 11, with column view, Quick Look, search inside files, tabs and split panes. It's the Mac Finder experience, built for Windows.</p>
     <div class="cta">
@@ -389,6 +389,9 @@ footer .flinks { display: flex; gap: 22px; }
       <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><path d="m8 9-4 3 4 3M16 9l4 3-4 3M13 6l-2 12"/></svg></div><h4>Made for developers</h4><p>Syntax-highlighted previews, Open in VS Code, and run git or any command from the palette.</p></div>
       <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-.9-.1-1.3A6 6 0 0 1 12.3 3z"/></svg></div><h4>Light and dark</h4><p>Follows Windows or your choice, with crisp, carefully tuned text in dark mode.</p></div>
       <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></div><h4>Drag into any app</h4><p>Drag files to Telegram, browsers, the desktop or Explorer, just like Windows does.</p></div>
+      <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></div><h4>Undo with Ctrl+Z</h4><p>Copied, moved, renamed or deleted the wrong thing? Ctrl+Z puts it back, step by step.</p></div>
+      <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5" stroke-dasharray="3 2"/><path d="M13 13l6 6M13 13v4M13 13h4"/></svg></div><h4>Drag to select</h4><p>Draw a box over files to select them, and Alt+Enter shows one Properties window for all of them.</p></div>
+      <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><path d="m5 8 4 4-4 4M12 16h7"/></svg></div><h4>Chain commands</h4><p><code>select *.pdf; move to PDFs</code> in one line. ↑ brings back earlier commands.</p></div>
       <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><path d="m17 14 3 3-3 3"/></svg></div><h4>Batch rename</h4><p><code>rename *.jpg trip-{n}.jpg</code> with a live preview before anything changes.</p></div>
       <div class="card reveal"><div class="icon"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></div><h4>Your default explorer</h4><p>Optional: folders, shortcuts and "Show in folder" from other apps open in X Finder (and Win+E on Windows 10).</p></div>
     </div>
@@ -443,6 +446,7 @@ footer .flinks { display: flex; gap: 22px; }
           <tr><td>Command palette, batch rename, calculator</td><td class="col-x yes">✓</td><td class="no">—</td></tr>
           <tr><td>Syntax-highlighted code preview</td><td class="col-x yes">✓</td><td class="no">—</td></tr>
           <tr><td>Rebind any keyboard shortcut</td><td class="col-x yes">✓</td><td class="no">—</td></tr>
+          <tr><td>Chain commands in one line (<code>select *.pdf; move to PDFs</code>)</td><td class="col-x yes">✓</td><td class="no">—</td></tr>
           <tr><td>Tabs</td><td class="col-x yes">✓ + tab groups</td><td class="yes">✓</td></tr>
           <tr><td>Free</td><td class="col-x yes">✓ open source</td><td class="yes">✓</td></tr>
         </tbody>

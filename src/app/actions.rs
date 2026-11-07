@@ -239,9 +239,13 @@ impl App {
                 .collect(),
             _ => Vec::new(),
         };
+        super::undo::RUNNING.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         std::thread::spawn(move || {
             shell::init_thread(true);
+            let before = super::undo::before(&op);
             let result = fileops::run(&op);
+            let step = super::undo::finish(before);
+            super::undo::RUNNING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             if result.is_ok() {
                 for (from, to) in &moves {
                     finder_rs::core::tags::moved(from, to);
@@ -249,6 +253,9 @@ impl App {
             }
             let desc = op.describe();
             let _ = slint::invoke_from_event_loop(move || {
+                if let Some(step) = step {
+                    super::undo::push(desc.clone(), step);
+                }
                 with_app(|a| {
                     // Lists that aren't a watched folder: drop what's gone.
                     if !matches!(a.tab().loc, Location::Dir(_)) {
@@ -310,13 +317,16 @@ impl App {
     }
 
     pub(super) fn show_properties(&mut self) {
-        let target = self.selected_paths().into_iter().next().or_else(|| self.current_dir());
-        if let Some(p) = target {
+        let mut targets = self.selected_paths();
+        if targets.is_empty() {
+            targets.extend(self.current_dir());
+        }
+        if !targets.is_empty() {
             std::thread::spawn(move || {
                 shell::init_thread(true);
-                fileops::show_properties(&p);
+                fileops::show_properties_many(&targets);
                 // Keep the thread (and with it the dialog) alive while it is open.
-                std::thread::sleep(Duration::from_secs(600));
+                fileops::run_dialogs();
             });
         }
     }
@@ -455,6 +465,7 @@ impl App {
         let path = dir.join(&name);
         match std::fs::create_dir(&path) {
             Ok(()) => {
+                super::undo::push("New folder", super::undo::Undo::Remove(vec![path.clone()]));
                 self.select_after = vec![name];
                 self.open_rename_dialog(path, "Name the new folder");
             }

@@ -42,11 +42,20 @@ export component CommandPalette inherits Rectangle {
                         root.close();
                         return accept;
                     }
+                    // Down: newer command while going through earlier ones,
+                    // otherwise the next row.
                     if e.text == Key.DownArrow {
+                        if Bridge.palette-browsing && Bridge.palette-history(false) {
+                            return accept;
+                        }
                         Bridge.palette-index = Math.min(Bridge.palette-items.length - 1, Bridge.palette-index + 1);
                         return accept;
                     }
+                    // Up on the first row: the commands typed before.
                     if e.text == Key.UpArrow {
+                        if Bridge.palette-index <= 0 && Bridge.palette-history(true) {
+                            return accept;
+                        }
                         Bridge.palette-index = Math.max(0, Bridge.palette-index - 1);
                         return accept;
                     }
@@ -76,7 +85,7 @@ export component CommandPalette inherits Rectangle {
                             width: parent.width;
                             height: parent.height;
                             visible: input.text == "";
-                            text: "Type a command (mkdir a, b · !ipconfig · 2+3) or search actions and folders";
+                            text: "Type a command (mkdir a, b · !ipconfig · 2+3) · ↑ earlier commands";
                             vertical-alignment: center;
                             overflow: elide;
                             font-size: 15px;

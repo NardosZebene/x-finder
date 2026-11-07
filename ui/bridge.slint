@@ -154,6 +154,12 @@ export global Bridge {
     callback header-context(x: length, y: length);
     // Click on empty space: clear the selection.
     callback background-click();
+    // Drag-select box on empty space (list and icon views). Coordinates are
+    // in the view's content (scrolled) space; items sit in a grid of
+    // `cols` cells of `cell-w` x `cell-h` starting at x = `pad`.
+    callback band-start(ctrl: bool);
+    callback band-select(x0: length, y0: length, x1: length, y1: length, cols: int, cell-w: length, cell-h: length, pad: length);
+    callback band-end();
 
     // Settings page
     in property <bool> settings-open;
@@ -283,6 +289,9 @@ export global Bridge {
     callback palette-show(prefill: string);
     callback palette-changed(text: string);
     callback palette-run(index: int);
+    // Up / Down through earlier commands; false when there is nothing to show.
+    callback palette-history(older: bool) -> bool;
+    in property <bool> palette-browsing;
     callback palette-close();
     // "!command" output shown under the list.
     in property <string> palette-output;

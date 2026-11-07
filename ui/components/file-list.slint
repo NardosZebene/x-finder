@@ -291,6 +291,12 @@ export component FileList inherits Rectangle {
     public function scroll-top() {
         list.content-y = 0px;
     }
+    out property <length> rows-top: header.height;
+    // Drag-select box: scroll offset, and scrolling while dragging past an edge.
+    out property <length> scroll-y: list.content-y;
+    public function scroll-by(d: length) {
+        list.content-y = min(0px, max(list.visible-height - list.content-height, list.content-y - d));
+    }
 
     public pure function page-rows() -> int {
         return max(1, floor(list.visible-height / Theme.row-height) - 1);

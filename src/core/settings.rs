@@ -108,6 +108,8 @@ pub struct Settings {
     pub window_ph: u32,
     /// Folders visited, most recent first (quick jump in the palette).
     pub recent_folders: Vec<String>,
+    /// Commands typed in the palette, most recent first (Up arrow).
+    pub command_history: Vec<String>,
     /// Reopen the tabs that were open when the window closed.
     pub restore_tabs: bool,
     /// Those tabs (written while `restore_tabs` is on).
@@ -219,6 +221,7 @@ impl Default for Settings {
             window_pw: 0,
             window_ph: 0,
             recent_folders: Vec::new(),
+            command_history: Vec::new(),
             restore_tabs: false,
             last_tabs: None,
             folder_views: Default::default(),

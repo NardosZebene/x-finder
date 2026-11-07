@@ -27,6 +27,15 @@ use crate::{Bridge, PaletteItem};
 const RECENT_MAX: usize = 60;
 /// Rows shown at once.
 const MAX_ROWS: usize = 9;
+/// Commands kept for the Up arrow.
+const HISTORY_MAX: usize = 100;
+
+thread_local! {
+    /// Where Up / Down is in the history (`None`: not going through it).
+    static HISTORY_POS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// What was typed before going through the history (Down past the newest restores it).
+    static HISTORY_DRAFT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
 
 #[derive(Clone)]
 pub(super) enum PAction {
@@ -150,6 +159,7 @@ const ACTIONS: &[(Command, &str)] = &[
     (Command::Cut, "Ctrl+X"),
     (Command::Paste, "Ctrl+V"),
     (Command::Duplicate, "Ctrl+D"),
+    (Command::Undo, "Ctrl+Z"),
     (Command::Rename, "F2"),
     (Command::Recycle, "Del"),
     (Command::DeleteForever, "Shift+Del"),
@@ -373,6 +383,8 @@ impl App {
         let b = ui.global::<Bridge>();
         b.set_palette_text(prefill.into());
         b.set_palette_open(true);
+        HISTORY_POS.with(|h| h.set(None));
+        b.set_palette_browsing(false);
         b.set_palette_fill_serial(b.get_palette_fill_serial() + 1);
         self.palette_changed(prefill);
     }
@@ -455,9 +467,18 @@ impl App {
                 let fill = if example.contains(' ') { format!("{} ", example.split(' ').next().unwrap()) } else { example.to_string() };
                 rows.push((item(example.to_string(), what.to_string(), "", "terminal"), PAction::Fill(fill)));
             }
+            rows.push((
+                item("select *.pdf; move to PDFs".into(), "Chain commands with ; (they run in order)".into(), "", "terminal"),
+                PAction::Fill("select *.pdf; move to PDFs".into()),
+            ));
             for (_, p) in self.folder_matches("", 4) {
                 rows.push((item(self.loc_title(&Location::Dir(p.clone())), p.display().to_string(), "", "folder"), PAction::Goto(p)));
             }
+        } else if let Some(parts) = chain_parts(t) {
+            rows.push((
+                item(t.to_string(), format!("Runs {} commands in order: {}", parts.len(), parts.join("  →  ")), "Enter", "terminal"),
+                PAction::Line(t.to_string()),
+            ));
         } else if let Some(line) = self.saved_line(t) {
             // A saved command's name (plus anything typed after it).
             let name = t.split_whitespace().next().unwrap_or_default().to_string();
@@ -601,6 +622,23 @@ impl App {
                 rows.push((item(format!("No match for “{t}”"), "Try: mkdir · touch · cd · select · tag · !command · 2+3".into(), "", "info"), PAction::Fill(String::new())));
             }
         }
+        // Earlier commands that start with what's typed, right under the
+        // first row (Enter still runs what's typed; ↓ then Enter runs one).
+        if !t.is_empty() && HISTORY_POS.with(|h| h.get()).is_none() {
+            let lower = t.to_lowercase();
+            let hits: Vec<String> = self
+                .settings
+                .command_history
+                .iter()
+                .filter(|c| c.to_lowercase().starts_with(&lower) && c.trim() != t)
+                .take(3)
+                .cloned()
+                .collect();
+            let at = rows.len().min(1);
+            for (k, c) in hits.into_iter().enumerate() {
+                rows.insert(at + k, (item(c.clone(), "Run again (from history)".into(), "", "recent"), PAction::Line(c)));
+            }
+        }
         // Command output below the list needs the room.
         rows.truncate(if self.cmd_output_shown() { 4 } else { MAX_ROWS });
         let Some(ui) = self.ui() else { return };
@@ -611,8 +649,67 @@ impl App {
         b.set_palette_index(0);
     }
 
+    /// Up (`older`) / Down through the commands typed before, like a terminal.
+    pub(super) fn palette_history(&mut self, older: bool) -> bool {
+        let Some(ui) = self.ui() else { return false };
+        let b = ui.global::<Bridge>();
+        let len = self.settings.command_history.len();
+        let pos = HISTORY_POS.with(|h| h.get());
+        let next = match (pos, older) {
+            (None, true) if len > 0 => {
+                HISTORY_DRAFT.with(|d| *d.borrow_mut() = b.get_palette_text().to_string());
+                Some(0)
+            }
+            (None, _) => return false,
+            (Some(i), true) => Some((i + 1).min(len.saturating_sub(1))),
+            (Some(0), false) => None,
+            (Some(i), false) => Some(i - 1),
+        };
+        let text = match next {
+            Some(i) => self.settings.command_history.get(i).cloned().unwrap_or_default(),
+            None => HISTORY_DRAFT.with(|d| d.borrow().clone()),
+        };
+        HISTORY_POS.with(|h| h.set(next));
+        b.set_palette_browsing(next.is_some());
+        b.set_palette_text(text.as_str().into());
+        b.set_palette_fill_serial(b.get_palette_fill_serial() + 1);
+        self.palette_changed(&text);
+        true
+    }
+
+    /// Typing ends going through the history.
+    pub(super) fn history_stop(&mut self) {
+        HISTORY_POS.with(|h| h.set(None));
+        if let Some(ui) = self.ui() {
+            ui.global::<Bridge>().set_palette_browsing(false);
+        }
+    }
+
+    fn remember_command(&mut self, line: &str) {
+        let line = line.trim();
+        if line.is_empty() {
+            return;
+        }
+        let h = &mut self.settings.command_history;
+        h.retain(|x| x != line);
+        h.insert(0, line.to_string());
+        h.truncate(HISTORY_MAX);
+    }
+
     pub(super) fn palette_run(&mut self, index: usize) {
         let Some(action) = self.palette_actions.get(index).cloned() else { return };
+        // What was typed, for the history (commands, not picks from the list).
+        let typed = self.ui().map(|ui| ui.global::<Bridge>().get_palette_text().to_string()).unwrap_or_default();
+        match &action {
+            PAction::Line(line) => {
+                // The first row runs what was typed; other rows (history
+                // suggestions, saved commands) are stored as themselves.
+                let keep = if index == 0 && !typed.trim().is_empty() { typed.clone() } else { line.clone() };
+                self.remember_command(&keep);
+            }
+            PAction::Goto(_) if matches!(split_verb(typed.trim()), Some(("cd", _))) => self.remember_command(&typed),
+            _ => {}
+        }
         match action {
             PAction::Fill(text) => {
                 if let Some(ui) = self.ui() {
@@ -658,6 +755,32 @@ impl App {
                 }
                 self.palette_close();
                 self.run_line(&line);
+            }
+        }
+    }
+
+    /// Runs the next command of a chain once the folder has loaded and file
+    /// operations have finished (so "cd Work; select *.pdf" sees Work's files).
+    pub(super) fn chain_step(&mut self) {
+        loop {
+            if CHAIN.with(|c| c.borrow().is_empty()) {
+                return;
+            }
+            let busy = self.tab().loading || super::undo::RUNNING.load(std::sync::atomic::Ordering::SeqCst) > 0;
+            if busy {
+                slint::Timer::single_shot(std::time::Duration::from_millis(60), || {
+                    super::with_app(|a| a.chain_step());
+                });
+                return;
+            }
+            let Some(next) = CHAIN.with(|c| c.borrow_mut().pop_front()) else { return };
+            self.run_line(&next);
+            // The folder watcher reports new items a moment after an operation.
+            if matches!(split_verb(&next), Some(("copy" | "move" | "mkdir" | "touch", _))) {
+                slint::Timer::single_shot(std::time::Duration::from_millis(400), || {
+                    super::with_app(|a| a.chain_step());
+                });
+                return;
             }
         }
     }
@@ -850,6 +973,10 @@ impl App {
 
     /// Runs a typed command line ("mkdir a, b", "touch x.txt", "cd docs"…).
     pub(super) fn run_line(&mut self, line: &str) {
+        if let Some(parts) = chain_parts(line) {
+            CHAIN.with(|c| *c.borrow_mut() = parts.into());
+            return self.chain_step();
+        }
         let saved = self.saved_line(line);
         let line = saved.as_deref().unwrap_or(line);
         let Some((verb, rest)) = split_verb(line) else {
@@ -868,6 +995,7 @@ impl App {
                     return self.toast(if verb == "mkdir" { "Usage: mkdir folder1, folder2" } else { "Usage: touch notes.txt, index.html" });
                 }
                 let (mut made, mut problems) = (Vec::new(), Vec::new());
+                let mut created: Vec<PathBuf> = Vec::new();
                 for name in &names {
                     // Sub-paths are fine ("src/app"); each part must be a valid name.
                     let parts: Vec<&str> = name.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
@@ -876,6 +1004,14 @@ impl App {
                         continue;
                     }
                     let target = parts.iter().fold(dir.clone(), |acc, p| acc.join(p));
+                    // The top-most folder or file this creates (what undo removes).
+                    let new_root = parts
+                        .iter()
+                        .scan(dir.clone(), |acc, p| {
+                            *acc = acc.join(p);
+                            Some(acc.clone())
+                        })
+                        .find(|p| !p.exists());
                     let result = if verb == "mkdir" {
                         if target.exists() { Err("already exists".to_string()) } else { std::fs::create_dir_all(&target).map_err(|e| e.to_string()) }
                     } else {
@@ -890,12 +1026,19 @@ impl App {
                             .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { "already exists".into() } else { e.to_string() })
                     };
                     match result {
-                        Ok(()) => made.push(parts[0].to_string()),
+                        Ok(()) => {
+                            made.push(parts[0].to_string());
+                            created.extend(new_root);
+                        }
                         Err(e) => problems.push(format!("{name}: {e}")),
                     }
                 }
                 made.dedup();
                 let what = if verb == "mkdir" { ("folder", "folders") } else { ("file", "files") };
+                super::undo::push(
+                    format!("Create {}", plural(created.len(), what.0, what.1)),
+                    super::undo::Undo::Remove(created),
+                );
                 if !made.is_empty() {
                     // Select them once the folder watcher has listed them.
                     self.select_after = made.clone();
@@ -1103,6 +1246,36 @@ impl App {
     }
 }
 
+thread_local! {
+    /// Commands still to run from a "a; b; c" line.
+    static CHAIN: std::cell::RefCell<std::collections::VecDeque<String>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+/// "select *.pdf; move to PDFs" -> its commands. `None` for a single command,
+/// and for "!…" / "save …" lines, whose `;` belongs to the command itself.
+fn chain_parts(line: &str) -> Option<Vec<String>> {
+    let t = line.trim();
+    if t.starts_with('!') || matches!(split_verb(t), Some(("save", _))) {
+        return None;
+    }
+    let mut parts = Vec::new();
+    let mut cur = String::new();
+    let mut quoted = false;
+    for ch in t.chars() {
+        match ch {
+            '"' => {
+                quoted = !quoted;
+                cur.push(ch);
+            }
+            ';' if !quoted => parts.push(std::mem::take(&mut cur)),
+            _ => cur.push(ch),
+        }
+    }
+    parts.push(cur);
+    let parts: Vec<String> = parts.into_iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect();
+    (parts.len() > 1).then_some(parts)
+}
+
 /// "ip = !ipconfig" → ("ip", "!ipconfig").
 fn parse_save(rest: &str) -> Option<(String, String)> {
     let (name, line) = rest.split_once('=')?;
@@ -1229,17 +1402,20 @@ impl App {
             }
         }
         let mut done = Vec::new();
+        let mut back = Vec::new();
         let mut failed = 0;
         for (old, tmp, new) in temps {
             let target = old.with_file_name(&new);
             if std::fs::rename(&tmp, &target).is_ok() {
                 finder_rs::core::tags::moved(&old, &target);
+                back.push((target.clone(), old.clone()));
                 done.push(new);
             } else {
                 failed += 1;
                 let _ = std::fs::rename(&tmp, &old);
             }
         }
+        super::undo::push(format!("Rename {}", plural(back.len(), "item", "items")), super::undo::Undo::MoveBack(back));
         self.select_after = done.clone();
         let msg = if failed == 0 {
             format!("Renamed {}", plural(done.len(), "item", "items"))
@@ -1265,6 +1441,15 @@ mod tests {
         assert!(parse_folder_rule("sort", "banana").is_err());
         assert_eq!(split_verb("sort"), None);
         assert_eq!(split_verb("view icons"), Some(("view", "icons")));
+    }
+
+    #[test]
+    fn chains() {
+        assert_eq!(chain_parts("select *.pdf; move to PDFs"), Some(vec!["select *.pdf".into(), "move to PDFs".into()]));
+        assert_eq!(chain_parts("mkdir Work;cd Work ; "), Some(vec!["mkdir Work".into(), "cd Work".into()]));
+        assert_eq!(chain_parts("select *.pdf"), None);
+        assert_eq!(chain_parts("!echo a; echo b"), None);
+        assert_eq!(chain_parts("rename \"a;b\" \"c\""), None);
     }
 
     #[test]

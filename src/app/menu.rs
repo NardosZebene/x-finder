@@ -481,10 +481,13 @@ impl App {
                 }
             }
             ("recycle", _) => self.run(Command::Recycle),
-            ("properties", _) => match first {
-                Some(p) => self.properties_of(p),
-                None => self.run(Command::Properties),
-            },
+            ("properties", _) => {
+                if paths.is_empty() {
+                    self.run(Command::Properties)
+                } else {
+                    self.properties_of(paths.clone())
+                }
+            }
             ("rename", _) => self.run(Command::Rename),
             ("compress", _) => self.compress(paths),
             ("duplicate", _) => self.run(Command::Duplicate),
@@ -672,11 +675,11 @@ impl App {
         });
     }
 
-    fn properties_of(&mut self, p: PathBuf) {
+    fn properties_of(&mut self, paths: Vec<PathBuf>) {
         std::thread::spawn(move || {
             finder_rs::core::shell::init_thread(true);
-            fileops::show_properties(&p);
-            std::thread::sleep(Duration::from_secs(600));
+            fileops::show_properties_many(&paths);
+            fileops::run_dialogs();
         });
     }
 

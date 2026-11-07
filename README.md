@@ -82,6 +82,7 @@ view icons all                    set the view for this folder and every subfold
 !git status                       run any command; output shows right in the palette
 save st = !git status             save it as a short command (then just type: st)
 1.5gb in mb   15% of 80   2+3*4   built-in calculator (Enter copies the answer)
+select *.pdf; move to PDFs        chain commands with ; (they run in order)
 ```
 
 <img src="docs/screenshots/palette-git.png" alt="Running git log from the command palette" width="49%"> <img src="docs/screenshots/batch-rename.png" alt="Batch rename with a preview" width="49%">
@@ -119,6 +120,7 @@ Settings are stored in `%APPDATA%\finder-rs`. To remove X Finder, turn off "defa
 | **Alt+← / Alt+→ / Alt+↑**, **Backspace** | Back / forward / enclosing folder |
 | **Ctrl+C / X / V**, **Ctrl+D** | Copy / cut / paste (works with Explorer too), duplicate |
 | **F2**, **Ctrl+Shift+N** | Rename, new folder |
+| **Ctrl+Z** | Undo the last copy, move, rename, delete or new folder |
 | **Delete / Shift+Delete** | Recycle Bin / delete permanently |
 | **Ctrl+Shift+C**, **Alt+Enter** | Copy path, properties |
 | **Ctrl+H** | Show hidden files |

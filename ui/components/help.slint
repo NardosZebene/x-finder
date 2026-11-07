@@ -197,6 +197,8 @@ export component HelpDialog inherits Rectangle {
                             Row { keys: "{n} {nn} {nnn} {name} {ext} {date}"; text: "Rename template parts: number (zero-padded), old name, extension, date modified."; }
                             Row { keys: "copy to D:\\backup"; text: "Copy the selected items there (the folder is created if needed)."; }
                             Row { keys: "move to D:\\backup"; text: "Move the selected items there."; }
+                            Row { keys: "↑   ↓"; text: "In the palette: go through the commands you typed before (↑ on the first row). Earlier commands that match what you type are suggested under it."; }
+                            Row { keys: "select *.pdf; move to PDFs"; text: "Chain commands with ; and they run in order (each waits for the one before). E.g. mkdir Work; select *.jpg; copy to Work; cd Work."; }
                             Row { keys: "zip archive.zip"; text: "Zip the selected items into this folder."; }
                             Row { keys: "tag work   tag none"; text: "Add a colour tag (by its name or colour) to the selection, or clear tags."; }
                             Row { keys: "newtab D:\\   term"; text: "New tab · open a terminal here."; }
@@ -214,6 +216,7 @@ export component HelpDialog inherits Rectangle {
                             title: "Files";
                             Row { keys: "Ctrl+C  Ctrl+X  Ctrl+V"; text: "Copy, cut, paste (also between this app and Explorer)."; }
                             Row { keys: "Ctrl+D   F2"; text: "Duplicate · rename."; }
+                            Row { keys: "Ctrl+Z"; text: "Undo the last copy, move, rename, delete to the Recycle Bin or new folder (press again to go further back). Permanent deletes can't be undone."; }
                             Row { keys: "Del   Shift+Del"; text: "Recycle Bin · delete permanently."; }
                             Row { keys: "Ctrl+Shift+N   Ctrl+Shift+C"; text: "New folder · copy the path."; }
                             Row { keys: "Drag & drop"; text: "Drop on a folder, tab, pane or sidebar place. Same drive moves, another drive copies; hold Ctrl to copy, Shift to move. Drag past the window edge to drop files into other apps: Telegram, browsers, email, the desktop, Explorer."; }

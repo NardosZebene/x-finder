@@ -32,6 +32,7 @@ pub mod instance;
 mod menu;
 mod places;
 mod shortcuts;
+mod undo;
 use places::build_places;
 pub mod selftest;
 pub use actions::external_drop;
@@ -113,6 +114,8 @@ struct Preview {
 
 thread_local! {
     static APP: RefCell<Option<App>> = const { RefCell::new(None) };
+    /// Selection when a Ctrl+drag-select box started (the box flips items on top of it).
+    static BAND_BASE: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Runs `f` with the app state. Returns `None` if the app isn't set up or the
@@ -544,6 +547,21 @@ fn wire(ui: &MainWindow) {
             a.sync_status();
         });
     });
+    b.on_band_start(|ctrl| {
+        with_app(|a| {
+            let base = if ctrl { a.model().selected_flags() } else { Vec::new() };
+            BAND_BASE.with(|b| *b.borrow_mut() = base);
+        });
+    });
+    b.on_band_select(|x0, y0, x1, y1, cols, cell_w, cell_h, pad| {
+        with_app(|a| a.band_select([x0, y0, x1, y1], cols.max(1) as usize, cell_w, cell_h, pad));
+    });
+    b.on_band_end(|| {
+        with_app(|a| {
+            a.sync_strip();
+            a.schedule_preview();
+        });
+    });
     b.on_place_context(|i, x, y| {
         with_app(|a| a.open_place_menu(i as usize, x, y));
     });
@@ -718,8 +736,12 @@ fn wire(ui: &MainWindow) {
         with_app(|a| a.palette_show(&text));
     });
     b.on_palette_changed(|text| {
-        with_app(|a| a.palette_changed(&text));
+        with_app(|a| {
+            a.history_stop();
+            a.palette_changed(&text)
+        });
     });
+    b.on_palette_history(|older| with_app(|a| a.palette_history(older)).unwrap_or(false));
     b.on_palette_run(|i| {
         with_app(|a| a.palette_run(i.max(0) as usize));
     });
@@ -1806,6 +1828,43 @@ impl App {
 
     // ---- selection & keyboard -----------------------------------------------
 
+    /// Selects the items inside the drag-select box (content coordinates);
+    /// with Ctrl held the box flips them on top of the earlier selection.
+    fn band_select(&mut self, [x0, y0, x1, y1]: [f32; 4], cols: usize, cell_w: f32, cell_h: f32, pad: f32) {
+        let model = self.model();
+        let total = model.total();
+        if cell_w <= 0.0 || cell_h <= 0.0 {
+            return;
+        }
+        let col_lo = ((x0 - pad) / cell_w).floor().max(0.0) as usize;
+        let col_hi = (x1 - pad) / cell_w;
+        let row_lo = (y0 / cell_h).floor().max(0.0) as usize;
+        let row_hi = y1 / cell_h;
+        let inside = |r: usize| {
+            let (gr, gc) = (r / cols, r % cols);
+            col_hi >= 0.0 && gc >= col_lo && gc as f32 <= col_hi.floor() && gr >= row_lo && row_hi >= 0.0 && gr as f32 <= row_hi.floor()
+        };
+        let mut last = None;
+        BAND_BASE.with(|b| {
+            let base = b.borrow();
+            model.select_where(|r| base.get(r).copied().unwrap_or(false) != inside(r));
+        });
+        for r in (0..total).rev() {
+            if inside(r) {
+                last = Some(r);
+                break;
+            }
+        }
+        if let Some(idx) = last.and_then(|r| model.entry_at(r)) {
+            model.set_cursor(Some(idx));
+            model.set_anchor(Some(idx));
+        }
+        self.pending_click = None;
+        self.type_ahead.clear();
+        self.note = None;
+        self.sync_status();
+    }
+
     fn row_pressed(&mut self, row: usize, ctrl: bool, shift: bool) {
         // Icon view: the grid may rebuild its tiles after the first click
         // (selection, preview), which loses Slint's own double-click state,
@@ -2075,6 +2134,7 @@ impl App {
             Command::Cut => self.clipboard_put(true),
             Command::Paste => self.paste(),
             Command::Duplicate => self.duplicate(),
+            Command::Undo => self.undo(),
             Command::Rename => self.begin_rename(),
             Command::NewFolder => self.new_folder(),
             Command::Recycle => self.delete_selection(false),

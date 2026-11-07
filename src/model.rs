@@ -514,7 +514,7 @@ impl FileModel {
         self.notify.row_changed(row);
     }
 
-    fn selected_flags(&self) -> Vec<bool> {
+    pub fn selected_flags(&self) -> Vec<bool> {
         let entries = self.entries.borrow();
         self.view.borrow().iter().map(|&i| entries[i as usize].selected).collect()
     }
